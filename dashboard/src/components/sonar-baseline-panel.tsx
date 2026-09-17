@@ -10,6 +10,7 @@ import { getBaselineLatest, refreshBaseline } from "@/lib/api";
 import type { BaselineReport, Verdict, SonarSeverity, BaselineComparison } from "@/lib/types";
 import { VERDICT_META } from "@/lib/types";
 import { cn } from "cn";
+import { useReview } from "@/lib/review-context";
 
 const SONAR_SEV_META: Record<SonarSeverity, { color: string; label: string; class: string }> = {
   BLOCKER:  { color: "var(--severity-critical)", label: "BLOCKER", class: "sev-critical" },
@@ -61,7 +62,14 @@ function RowLabel({ file, line }: { file: string; line: number }) {
   );
 }
 
+function parsePrUrl(url: string): { owner: string; repo: string; number: number } | null {
+  const match = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2], number: parseInt(match[3], 10) };
+}
+
 export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: string }) {
+  const { report: reviewReport, phase: reviewPhase } = useReview();
   const [report, setReport] = useState<BaselineReport | null>(null);
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -100,8 +108,8 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
   }
 
   const comp: BaselineComparison | undefined = report?.patchcourt?.comparison;
-  const verdict: Verdict | undefined = report?.patchcourt?.verdict ?? comp?.verdict;
-  const rawN = comp?.counts.raw ?? 0;
+  const baselineVerdict: Verdict | undefined = report?.patchcourt?.verdict ?? comp?.verdict;
+  const rawN = report?.issues_touching_pr ?? 0; // Use issues on PR files, not line-level comparison raw
   const confirmedM = comp?.counts.confirmed ?? 0;
   const suppressed = comp?.counts.suppressed ?? 0;
   const sonarMissed = comp?.counts.sonar_missed ?? 0;
@@ -110,6 +118,12 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
     {} as Record<SonarSeverity, number>,
   );
   const hasBaseline = !!report;
+
+  // Check if we have a review for the same PR
+  const samePrReview = reviewReport && report && parsePrUrl(reviewReport.pr_url)?.number === parsePrUrl(report.pr_url)?.number;
+  const effectiveVerdict = samePrReview ? reviewReport.verdict : baselineVerdict;
+  const effectiveScore = samePrReview ? reviewReport.overall_score : (report?.patchcourt?.overall_score ?? comp?.overall_score);
+  const effectiveComparison = samePrReview ? null : comp; // If we have real review, don't show line-level comparison
 
   const VerdictIcon = {
     MERGE: CheckCircle2,
@@ -189,20 +203,26 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
 
         {!loading && hasBaseline && (
           <>
-            {comp ? (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-foreground">
-                <span className="font-semibold">SonarQube raw: <span className="font-mono">{rawN}</span></span>
-                <span className="text-muted-foreground">|</span>
-                <span>PatchCourt confirmed: <span className="font-mono font-semibold sev-low">{confirmedM}</span></span>
-                <span className="text-muted-foreground">|</span>
-                <span>suppressed as unbacked: <span className="font-mono font-semibold sev-medium">{suppressed}</span></span>
-              </div>
-            ) : (
-              <div className="rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                Raw report loaded — click <strong>Refresh baseline</strong> to compute PatchCourt comparison.
-              </div>
-            )}
+            {/* Headline stat - use issues on PR files, not line-level comparison */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-foreground">
+              <span className="font-semibold">SonarQube raw: <span className="font-mono">{rawN}</span></span>
+              <span className="text-muted-foreground">|</span>
+              {effectiveComparison && (
+                <>
+                  <span>PatchCourt confirmed: <span className="font-mono font-semibold sev-low">{confirmedM}</span></span>
+                  <span className="text-muted-foreground">|</span>
+                  <span>suppressed as unbacked: <span className="font-mono font-semibold sev-medium">{suppressed}</span></span>
+                </>
+              )}
+              {!effectiveComparison && samePrReview && (
+                <>
+                  <span className="text-muted-foreground">|</span>
+                  <span>Using actual PatchCourt review for this PR</span>
+                </>
+              )}
+            </div>
 
+            {/* Severity breakdown */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium text-muted-foreground">Raw findings breakdown:</span>
               {(Object.keys(SONAR_SEV_META) as SonarSeverity[]).map((s) => (
@@ -212,14 +232,15 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
                 </Badge>
               ))}
               <span className="ml-auto font-mono text-xs text-muted-foreground">
-                total open: {report.total_open_issues} | touching PR: {report.issues_touching_pr}
+                total open: {report.total_open_issues} | on PR files: {report.issues_touching_pr}
               </span>
             </div>
 
-            {verdict && (
+            {/* PatchCourt verdict - use actual review if same PR, otherwise baseline comparison */}
+            {effectiveVerdict && (
               <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-4 py-3">
                 {(() => {
-                  switch (verdict) {
+                  switch (effectiveVerdict) {
                     case "MERGE":
                       return <CheckCircle2 className={cn("size-5", verdictColors.MERGE)} />;
                     case "NEEDS_REVIEW":
@@ -231,16 +252,18 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
                   }
                 })()}
                 <div>
-                  <Badge className={cn("bg-sev-critical text-black", verdict === "MERGE" && "bg-sev-low", verdict === "NEEDS_REVIEW" && "bg-sev-medium")}>
-                    {VERDICT_META[verdict].label}
+                  <Badge className={cn("bg-sev-critical text-black", effectiveVerdict === "MERGE" && "bg-sev-low", effectiveVerdict === "NEEDS_REVIEW" && "bg-sev-medium")}>
+                    {VERDICT_META[effectiveVerdict].label}
                   </Badge>
                   <span className="ml-2 text-xs text-muted-foreground">
-                    PatchCourt score {report.patchcourt?.overall_score?.toFixed(1) ?? "—"}
+                    PatchCourt score {effectiveScore?.toFixed(1) ?? "—"}
+                    {samePrReview && <span className="ml-1.5 text-[10px] text-primary">(actual review)</span>}
                   </span>
                 </div>
               </div>
             )}
 
+            {/* Comparison groups - only show if we don't have actual review, otherwise note it */}
             {comp && (
               <div className="flex flex-col gap-5">
                 <DiffSection title="Confirmed / kept (corroborated)" color="var(--severity-low)" count={confirmedM} empty="No corroborated issues — all SonarQube findings suppressed as unbacked.">
@@ -277,9 +300,27 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
                 </DiffSection>
               </div>
             )}
+
+            {samePrReview && !effectiveComparison && (
+              <div className="rounded-md bg-primary/10 border border-primary/20 p-3 text-xs text-primary">
+                Showing actual PatchCourt review result for this PR. Line-level comparison not available — comparison requires exact line overlap.
+              </div>
+            )}
           </>
         )}
       </CardContent>
     </Card>
   );
 }
+
+const VerdictIcon = {
+  MERGE: CheckCircle2,
+  NEEDS_REVIEW: AlertTriangle,
+  BLOCK: XCircle,
+} as const;
+
+const verdictColors = {
+  MERGE: "text-green-400",
+  NEEDS_REVIEW: "text-amber-400",
+  BLOCK: "text-red-400",
+} as const;

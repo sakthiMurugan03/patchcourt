@@ -5,8 +5,12 @@ import { Gavel, Wifi, WifiOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "cn";
+import { useReview } from "@/lib/review-context";
+import { useRouter } from "next/navigation";
 
-export function TopBar({ onRunReview, onRunDemo, busy }: { onRunReview: (url: string) => void; onRunDemo: () => void; busy: boolean }) {
+export function TopBar() {
+  const { runReview, runDemo, busy, phase } = useReview();
+  const router = useRouter();
   const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">("checking");
   const [prUrl, setPrUrl] = useState("");
 
@@ -27,9 +31,17 @@ export function TopBar({ onRunReview, onRunDemo, busy }: { onRunReview: (url: st
     return () => clearInterval(interval);
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (prUrl.trim()) onRunReview(prUrl.trim());
+    if (prUrl.trim()) {
+      await runReview(prUrl.trim());
+      setPrUrl("");
+    }
+  };
+
+  const handleDemo = async () => {
+    await runDemo();
+    setPrUrl("");
   };
 
   return (
@@ -51,7 +63,7 @@ export function TopBar({ onRunReview, onRunDemo, busy }: { onRunReview: (url: st
           <RefreshCw className={cn("size-4", busy && "animate-spin")} />
           <span>Run Review</span>
         </Button>
-        <Button type="button" variant="secondary" onClick={onRunDemo} disabled={busy} className="gap-2">
+        <Button type="button" variant="secondary" onClick={handleDemo} disabled={busy} className="gap-2">
           <Gavel className="size-4" />
           <span>Offline Demo</span>
         </Button>
