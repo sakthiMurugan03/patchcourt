@@ -1,19 +1,18 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { usePathname } from "next/navigation";
-import { Gavel, SearchCheck, MessageSquare, BarChart2, History, X, RefreshCw } from "lucide-react";
-import { AppLayout } from "@/components/app-layout";
+import { Gavel, RefreshCw } from "lucide-react";
 import { AuditView } from "@/components/audit-view";
 import { DebateTranscript } from "@/components/debate-transcript";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { ReportForm } from "@/components/report-form";
-import { SonarBaselinePanel } from "@/components/sonar-baseline-panel";
 import { TierLegend } from "@/components/tier-legend";
 import { VerdictBanner } from "@/components/verdict-banner";
 import { runDemo, submitReview } from "@/lib/api";
 import type { Report } from "@/lib/types";
 import { cn } from "cn";
+import { useReview } from "@/lib/review-context";
+import { LayoutWrapper } from "@/components/layout-wrapper";
 import {
   BarChart,
   Bar,
@@ -25,111 +24,55 @@ import {
   Cell,
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { ViewHeader } from "@/components/view-header";
 
 type Phase = "idle" | "loading" | "done" | "error";
-type View = "overview" | "evidence" | "debate" | "baseline" | "history";
-
-const VIEW_CONFIG = [
-  { id: "overview", label: "Overview", icon: Gavel, path: "/" },
-  { id: "evidence", label: "Evidence", icon: SearchCheck, path: "/evidence" },
-  { id: "debate", label: "Debate", icon: MessageSquare, path: "/debate" },
-  { id: "baseline", label: "SonarQube Baseline", icon: BarChart2, path: "/baseline" },
-  { id: "history", label: "History", icon: History, path: "/history" },
-] as const;
-
-function pathToView(path: string): View {
-  if (path.startsWith("/evidence")) return "evidence";
-  if (path.startsWith("/debate")) return "debate";
-  if (path.startsWith("/baseline")) return "baseline";
-  if (path.startsWith("/history")) return "history";
-  return "overview";
-}
 
 export default function Page() {
-  const pathname = usePathname();
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [report, setReport] = useState<Report | null>(null);
-  const [error, setError] = useState<string>("");
-  const [activeView, setActiveView] = useState<View>(() => pathToView(pathname));
+  const { report, phase, error, setReport, setPhase, setError, clearReview } = useReview();
+  const [localReport, setLocalReport] = useState<Report | null>(report);
+  const [localPhase, setLocalPhase] = useState<Phase>(phase);
+  const [localError, setLocalError] = useState<string>(error);
 
   useEffect(() => {
-    setActiveView(pathToView(pathname));
-  }, [pathname]);
+    setLocalReport(report);
+    setLocalPhase(phase);
+    setLocalError(error);
+  }, [report, phase, error]);
 
   async function load(fn: () => Promise<Report>) {
+    setLocalPhase("loading");
+    setLocalError("");
     setPhase("loading");
     setError("");
-    setActiveView("overview");
     try {
       const r = await fn();
+      setLocalReport(r);
+      setLocalPhase("done");
       setReport(r);
       setPhase("done");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Review failed unexpectedly");
+      const msg = e instanceof Error ? e.message : "Review failed unexpectedly";
+      setLocalError(msg);
+      setLocalPhase("error");
+      setError(msg);
       setPhase("error");
     }
   }
 
   function handleNewReview() {
-    setReport(null);
-    setPhase("idle");
-    setActiveView("overview");
+    setLocalReport(null);
+    setLocalPhase("idle");
+    clearReview();
   }
-
-  function renderOverview() {
-    return (
-      <div className="flex flex-col gap-6">
-        {phase !== "done" && (
-          <ReportForm
-            onReview={(u) => load(() => submitReview(u))}
-            onDemo={() => load(runDemo)}
-            busy={phase === "loading"}
-          />
-        )}
-        {phase === "loading" && <LoadingState />}
-        {phase === "error" && <ErrorState error={error} onRetry={() => setPhase("idle")} />}
-        {phase === "done" && report && <OverviewContent report={report} onNewReview={handleNewReview} />}
-      </div>
-    );
-  }
-
-  function renderEvidence() {
-    if (!report) return <EmptyState message="Run a review to see evidence" />;
-    return <EvidencePanel claims={report.claims} />;
-  }
-
-  function renderDebate() {
-    if (!report) return <EmptyState message="Run a review to see debate transcript" />;
-    return <DebateTranscript debates={report.debate_transcripts} />;
-  }
-
-  function renderBaseline() {
-    return <SonarBaselinePanel defaultPrUrl={report?.pr_url} />;
-  }
-
-  function renderHistory() {
-    return <HistoryView />;
-  }
-
-  const renderView = {
-    overview: renderOverview,
-    evidence: renderEvidence,
-    debate: renderDebate,
-    baseline: renderBaseline,
-    history: renderHistory,
-  }[activeView];
 
   return (
-    <AppLayout
-      onRunReview={(u) => load(() => submitReview(u))}
-      onRunDemo={() => load(runDemo)}
-      busy={phase === "loading"}
-    >
+    <LayoutWrapper>
       <div className="flex flex-col gap-6">
         <ViewHeader
-          title={VIEW_CONFIG.find(v => v.id === activeView)?.label ?? ""}
+          title="Overview"
           actions={
-            phase === "done" && report && activeView === "overview" && (
+            localPhase === "done" && localReport && (
               <button
                 onClick={handleNewReview}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -140,9 +83,20 @@ export default function Page() {
             )
           }
         />
-        <div className="flex-1 min-h-0">{renderView()}</div>
+        <div className="flex flex-col gap-6">
+          {localPhase !== "done" && (
+            <ReportForm
+              onReview={(u) => load(() => submitReview(u))}
+              onDemo={() => load(runDemo)}
+              busy={localPhase === "loading"}
+            />
+          )}
+          {localPhase === "loading" && <LoadingState />}
+          {localPhase === "error" && <ErrorState error={localError} onRetry={() => setLocalPhase("idle")} />}
+          {localPhase === "done" && localReport && <OverviewContent report={localReport} onNewReview={handleNewReview} />}
+        </div>
       </div>
-    </AppLayout>
+    </LayoutWrapper>
   );
 }
 
@@ -194,35 +148,6 @@ function OverviewContent({ report, onNewReview }: { report: Report; onNewReview:
       <DebateTranscript debates={report.debate_transcripts} />
       <AuditView report={report} />
     </>
-  );
-}
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-12 text-center">
-      <Gavel className="size-12 text-muted-foreground/30" />
-      <p className="mt-4 text-muted-foreground">{message}</p>
-    </div>
-  );
-}
-
-function HistoryView() {
-  return (
-    <div className="rounded-lg border border-border bg-card p-6">
-      <h3 className="text-lg font-medium mb-4">Review History</h3>
-      <p className="text-muted-foreground text-sm">History view coming soon — connects to audit trail.</p>
-    </div>
-  );
-}
-
-function ViewHeader({ title, actions }: { title: string; actions?: React.ReactNode }) {
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-      </div>
-      {actions && <div className="flex-shrink-0">{actions}</div>}
-    </div>
   );
 }
 
@@ -291,6 +216,24 @@ function ChartsRow({ report }: { report: Report }) {
     5: "var(--severity-info)",
   } as const;
 
+  const TOOLTIP_STYLE = {
+    backgroundColor: "var(--card)",
+    border: "1px solid var(--border)",
+    borderRadius: 6,
+    color: "var(--foreground)",
+  };
+
+  const TOOLTIP_LABEL_STYLE = {
+    color: "var(--foreground)",
+    fontWeight: 600,
+    fontSize: 12,
+  };
+
+  const TOOLTIP_ITEM_STYLE = {
+    color: "var(--foreground)",
+    fontSize: 12,
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Card className="w-full">
@@ -304,7 +247,9 @@ function ChartsRow({ report }: { report: Report }) {
               <XAxis type="number" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
               <YAxis dataKey="label" type="category" tick={{ fontSize: 11, fill: "var(--foreground)", fontFamily: "var(--font-mono)" }} axisLine={false} tickLine={false} width={60} />
               <Tooltip
-                contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 6 }}
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={TOOLTIP_LABEL_STYLE}
+                itemStyle={TOOLTIP_ITEM_STYLE}
                 formatter={(value: unknown) => [Number(value ?? 0), "claims"]}
               />
               <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={28}>
@@ -328,7 +273,9 @@ function ChartsRow({ report }: { report: Report }) {
               <XAxis type="number" tick={{ fontSize: 10, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
               <YAxis dataKey="label" type="category" tick={{ fontSize: 11, fill: "var(--foreground)", fontFamily: "var(--font-mono)" }} axisLine={false} tickLine={false} width={60} />
               <Tooltip
-                contentStyle={{ backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 6 }}
+                contentStyle={TOOLTIP_STYLE}
+                labelStyle={TOOLTIP_LABEL_STYLE}
+                itemStyle={TOOLTIP_ITEM_STYLE}
                 formatter={(value: unknown) => [Number(value ?? 0), "claims"]}
               />
               <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={28}>

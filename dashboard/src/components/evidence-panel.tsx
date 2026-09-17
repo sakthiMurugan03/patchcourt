@@ -15,7 +15,18 @@ import {
 import { AGENT_META, TIER_INFO, type Claim } from "@/lib/types";
 import { cn } from "cn";
 
-type ClaimWithExp = Claim & { _expanded?: boolean };
+function generateClaimId(claim: Claim): string {
+  const str = `${claim.file}:${claim.line}:${claim.issue}:${claim.agent}:${claim.tier}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+type ClaimWithExp = Claim & { _expanded?: boolean; _id: string };
 
 const SEVERITY_STYLE: Record<number, { color: string; label: string; class: string }> = {
   5: { color: "var(--severity-critical)", label: "Critical", class: "sev-critical" },
@@ -32,7 +43,7 @@ function severityScore(c: Claim) {
   return c.severity * (c.corroborated ? 1.25 : 1) * TIER_INFO[c.tier]?.weight;
 }
 
-function EvidenceRow({ claim, index, onToggle }: { claim: ClaimWithExp; index: number; onToggle: () => void }) {
+function EvidenceRow({ claim, onToggle }: { claim: ClaimWithExp; onToggle: () => void }) {
   const agent = AGENT_META[claim.agent] ?? { color: "var(--muted-foreground)", name: claim.agent || "Agent" };
   const sev = SEVERITY_STYLE[claim.severity] ?? SEVERITY_STYLE[3];
   const tier = TIER_INFO[claim.tier] ?? TIER_INFO[3];
@@ -104,18 +115,26 @@ export function EvidencePanel({ claims }: { claims: Claim[] }) {
   const [source, setSource] = useState("all");
   const [sortBy, setSortBy] = useState<SortKey>("severity");
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  const toggleRow = (index: number) => {
-    setExpandedRows(prev => {
+  const claimsWithIds = useMemo(() => 
+    claims.map(c => ({ ...c, _id: generateClaimId(c) })), 
+    [claims]
+  );
+
+  const toggleRow = (id: string) => {
+    setExpandedIds(prev => {
       const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
-  const claimsWithExpanded = useMemo(() => claims.map((c, i) => ({ ...c, _expanded: expandedRows.has(i) })), [claims, expandedRows]);
+  const claimsWithExpanded = useMemo(() => 
+    claimsWithIds.map(c => ({ ...c, _expanded: expandedIds.has(c._id) })), 
+    [claimsWithIds, expandedIds]
+  );
 
   const visible = useMemo(() => {
     const min = Number(minSeverity);
@@ -214,8 +233,8 @@ export function EvidencePanel({ claims }: { claims: Claim[] }) {
                   </td>
                 </tr>
               ) : (
-                visible.map((c, i) => (
-                  <EvidenceRow key={i} claim={c} index={i} onToggle={() => toggleRow(i)} />
+                visible.map((c) => (
+                  <EvidenceRow key={c._id} claim={c} onToggle={() => toggleRow(c._id)} />
                 ))
               )}
             </tbody>
