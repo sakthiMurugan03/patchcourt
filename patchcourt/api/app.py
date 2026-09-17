@@ -137,3 +137,45 @@ async def baseline_compare(req: ReviewRequest) -> dict:
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/sonar/health")
+async def sonar_health() -> dict:
+    """Check if SonarQube is reachable."""
+    from patchcourt.sonar_live import check_sonar_available
+    return await check_sonar_available()
+
+
+@app.get("/api/sonar/quality-gate")
+async def sonar_quality_gate() -> dict:
+    """Quality gate status for the configured project."""
+    from patchcourt.sonar_live import get_quality_gate, SonarQubeUnavailable
+    try:
+        return await get_quality_gate()
+    except SonarQubeUnavailable as e:
+        return {"available": False, "error": str(e)}
+
+
+@app.get("/api/sonar/measures")
+async def sonar_measures() -> dict:
+    """Component measures (metrics) for the configured project."""
+    from patchcourt.sonar_live import get_measures, SonarQubeUnavailable
+    try:
+        return await get_measures()
+    except SonarQubeUnavailable as e:
+        return {"available": False, "error": str(e)}
+
+
+@app.get("/api/sonar/issues")
+async def sonar_issues(
+    page: int = 1,
+    page_size: int = 20,
+    severities: str | None = None,
+    types: str | None = None,
+) -> dict:
+    """Paginated issue search for the configured project."""
+    from patchcourt.sonar_live import get_issues, SonarQubeUnavailable
+    try:
+        return await get_issues(page=page, page_size=page_size, severities=severities, types=types)
+    except SonarQubeUnavailable as e:
+        return {"available": False, "error": str(e)}

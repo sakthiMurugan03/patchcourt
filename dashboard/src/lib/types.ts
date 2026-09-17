@@ -117,3 +117,60 @@ export type BaselineReport = {
     comparison: BaselineComparison;
   };
 };
+
+export type SonarQualityGate = {
+  available: boolean;
+  project_key?: string;
+  status?: "OK" | "ERROR" | "WARN" | "UNKNOWN";
+  conditions?: Array<{
+    metric: string;
+    status: "OK" | "ERROR" | "WARN";
+    value: string;
+    error_threshold: string | null;
+    warning_threshold: string | null;
+  }>;
+  error?: string;
+};
+
+export type SonarMeasures = {
+  available: boolean;
+  project_key?: string;
+  bugs?: string;
+  vulnerabilities?: string;
+  code_smells?: string;
+  security_hotspots?: string;
+  coverage?: string;
+  duplicated_lines_density?: string;
+  reliability_rating?: string;
+  security_rating?: string;
+  sqale_rating?: string;
+  error?: string;
+};
+
+export type SonarIssueLive = {
+  key: string;
+  rule: string;
+  severity: "BLOCKER" | "CRITICAL" | "MAJOR" | "MINOR" | "INFO";
+  type: "BUG" | "VULNERABILITY" | "CODE_SMELL";
+  component: string;
+  file: string;
+  line: number | null;
+  message: string;
+  status: string;
+  tags: string[];
+};
+
+export type SonarIssuesResponse = {
+  available: boolean;
+  project_key?: string;
+  total: number;
+  page: number;
+  page_size: number;
+  issues: SonarIssueLive[];
+  error?: string;
+};
+
+export type SonarHealth = {
+  available: boolean;
+  error?: string;
+};

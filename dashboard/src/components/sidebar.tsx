@@ -11,6 +11,7 @@ import {
   History,
   Scale,
   Gavel,
+  Activity,
 } from "lucide-react";
 import { cn } from "cn";
 
@@ -19,6 +20,7 @@ const NAV_ITEMS = [
   { href: "/evidence", label: "Evidence", icon: SearchCheck },
   { href: "/debate", label: "Debate", icon: MessageSquare },
   { href: "/baseline", label: "SonarQube Baseline", icon: BarChart2 },
+  { href: "/sonar-live", label: "SonarQube Live", icon: Activity },
   { href: "/history", label: "History", icon: History },
 ] as const;
 

@@ -39,6 +39,10 @@ class Settings(BaseModel):
     sonar_token: str = os.getenv("SONAR_TOKEN", "")
     sonar_component: str = os.getenv("SONAR_COMPONENT", "patchcourt")
 
+    # SonarQube Live
+    sonar_project_key: str = os.getenv("SONAR_PROJECT_KEY", "patchcourt")
+    sonar_host_url: str = os.getenv("SONAR_HOST_URL", "http://localhost:9000")
+
     # Sandbox
     sandbox_enabled: bool = os.getenv("SANDBOX_ENABLED", "false").lower() in ("1", "true", "yes")
     sandbox_image: str = os.getenv("SANDBOX_IMAGE", "patchcourt-sandbox:latest")
