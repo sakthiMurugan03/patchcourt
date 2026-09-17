@@ -39,7 +39,7 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
       const r = await submitReview(prUrl);
       setReport(r);
       setPhase("done");
-      router.push("/overview");
+      router.push("/");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Review failed unexpectedly";
       setError(msg);
@@ -54,7 +54,7 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
       const r = await runDemoApi();
       setReport(r);
       setPhase("done");
-      router.push("/overview");
+      router.push("/");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Demo failed unexpectedly";
       setError(msg);
