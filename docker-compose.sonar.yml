@@ -1,0 +1,24 @@
+name: patchcourt-sonar
+
+# Standalone SonarQube for the patchcourt baseline demo. No external DB —
+# uses SonarQube's embedded H2 evaluation database, so it is fully
+# self-contained: `docker compose -f docker-compose.sonar.yml up -d`.
+
+services:
+  sonarqube:
+    image: sonarqube:10-community
+    ports:
+      - "9000:9000"
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      SONAR_EMBEDDEDDATABASE: "true"
+      SONAR_WEB_JAVAADDITIONALOPTS: "-Xmx1g"
+    volumes:
+      - sonardata:/opt/sonarqube/data
+      - sonarlogs:/opt/sonarqube/logs
+      - sonarextensions:/opt/sonarqube/extensions
+
+volumes:
+  sonardata:
+  sonarlogs:
+  sonarextensions:

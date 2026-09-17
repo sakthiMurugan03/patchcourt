@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PatchCourt — Evidence-Tiered PR Review</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h1>PatchCourt</h1>
+  <p class="tagline">Multi-agent, evidence-tiered AI code review for GitHub Pull Requests.</p>
+
+  <form id="review-form">
+    <input id="pr-url" type="url" placeholder="https://github.com/owner/repo/pull/123">
+    <button type="submit">Review</button>
+  </form>
+  <p id="error" class="error hidden"></p>
+
+  <section id="status" class="hidden">
+    <div class="spinner"></div>
+    <p id="status-text">Running pipeline… ingest → RAG → agents → debate → judge</p>
+  </section>
+
+  <section id="report" class="hidden">
+    <header class="verdict-bar">
+      <h2 id="verdict"></h2>
+      <span id="score"></span>
+    </header>
+    <p id="pr-link"></p>
+
+    <details id="debate-section" open>
+      <summary>Debate Transcript</summary>
+      <div id="debates"></div>
+    </details>
+
+    <div id="file-tabs" class="tabs"></div>
+    <div id="claims"></div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+# Byte-compiled / optimization
+__pycache__/
+*.py[cod]
+
+# Virtual environments / tooling caches
+.venv/
+.uv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local env + secrets
+.env
+.sonar-token
+
+# Sandbox working copies (host-visible dir for the tool containers)
+.sandbox/
+
+# SonarQube scanner artifacts
+.scannerwork/
+.sonar/
+
+# Baseline reports
+reports/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+node_modules/
+dashboard/.next/
+dashboard/node_modules/
+*.log
+.DS_Store
+data/
+*.db
