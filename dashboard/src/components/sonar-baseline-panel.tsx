@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, XCircle, Search, ShieldAlert, ShieldCheck, ShieldQuestion, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, XCircle, Search, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,18 +9,19 @@ import { Input } from "@/components/ui/input";
 import { getBaselineLatest, refreshBaseline } from "@/lib/api";
 import type { BaselineReport, Verdict, SonarSeverity, BaselineComparison } from "@/lib/types";
 import { VERDICT_META } from "@/lib/types";
+import { cn } from "cn";
 
-const SONAR_SEV_META: Record<SonarSeverity, { color: string; label: string }> = {
-  BLOCKER:  { color: "#f87171", label: "BLOCKER" },
-  CRITICAL: { color: "#fb923c", label: "CRITICAL" },
-  MAJOR:    { color: "#fbbf24", label: "MAJOR" },
-  MINOR:    { color: "#38bdf8", label: "MINOR" },
-  INFO:     { color: "#94a3b8", label: "INFO" },
+const SONAR_SEV_META: Record<SonarSeverity, { color: string; label: string; class: string }> = {
+  BLOCKER:  { color: "var(--severity-critical)", label: "BLOCKER", class: "sev-critical" },
+  CRITICAL: { color: "var(--severity-high)", label: "CRITICAL", class: "sev-high" },
+  MAJOR:    { color: "var(--severity-medium)", label: "MAJOR", class: "sev-medium" },
+  MINOR:    { color: "var(--severity-low)", label: "MINOR", class: "sev-low" },
+  INFO:     { color: "var(--severity-info)", label: "INFO", class: "sev-info" },
 };
 
 function SeverityChip({ severity }: { severity: SonarSeverity }) {
   const meta = SONAR_SEV_META[severity] ?? SONAR_SEV_META.INFO;
-  return <Badge style={{ backgroundColor: meta.color, color: "#0b1220" }}>{meta.label}</Badge>;
+  return <Badge variant="outline" className={cn("font-mono text-[10px]", meta.class)} style={{ borderColor: meta.color, color: meta.color }}>{meta.label}</Badge>;
 }
 
 function DiffSection({
@@ -110,8 +111,20 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
   );
   const hasBaseline = !!report;
 
+  const VerdictIcon = {
+    MERGE: CheckCircle2,
+    NEEDS_REVIEW: AlertTriangle,
+    BLOCK: XCircle,
+  } as const;
+
+  const verdictColors = {
+    MERGE: "text-green-400",
+    NEEDS_REVIEW: "text-amber-400",
+    BLOCK: "text-red-400",
+  } as const;
+
   return (
-    <Card className="w-full border-l-4" style={{ borderLeftColor: "#38bdf8" }}>
+    <Card className="w-full border-l-4" style={{ borderLeftColor: "var(--primary)" }}>
       <CardHeader className="pb-0">
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="text-base">SonarQube Baseline</CardTitle>
@@ -128,7 +141,6 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
       </CardHeader>
 
       <CardContent className="flex flex-col gap-5 pt-4">
-        {/* controls */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Input
             placeholder="https://github.com/owner/repo/pull/123"
@@ -177,14 +189,13 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
 
         {!loading && hasBaseline && (
           <>
-            {/* headline stat */}
             {comp ? (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-foreground">
                 <span className="font-semibold">SonarQube raw: <span className="font-mono">{rawN}</span></span>
                 <span className="text-muted-foreground">|</span>
-                <span>PatchCourt confirmed: <span className="font-mono font-semibold" style={{ color: "#2dd4bf" }}>{confirmedM}</span></span>
+                <span>PatchCourt confirmed: <span className="font-mono font-semibold sev-low">{confirmedM}</span></span>
                 <span className="text-muted-foreground">|</span>
-                <span>suppressed as unbacked: <span className="font-mono font-semibold" style={{ color: "#fbbf24" }}>{suppressed}</span></span>
+                <span>suppressed as unbacked: <span className="font-mono font-semibold sev-medium">{suppressed}</span></span>
               </div>
             ) : (
               <div className="rounded-md bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
@@ -192,11 +203,10 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
               </div>
             )}
 
-            {/* severity breakdown */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-medium text-muted-foreground">Raw findings breakdown:</span>
               {(Object.keys(SONAR_SEV_META) as SonarSeverity[]).map((s) => (
-                <Badge key={s} variant="outline" className="font-mono text-[11px]" style={{ borderColor: SONAR_SEV_META[s].color }}>
+                <Badge key={s} variant="outline" className={cn("font-mono text-[11px]", SONAR_SEV_META[s].class)} style={{ borderColor: SONAR_SEV_META[s].color }}>
                   <span style={{ color: SONAR_SEV_META[s].color }}>{SONAR_SEV_META[s].label}</span>
                   <span className="ml-1.5 text-foreground">{severityCounts[s] ?? 0}</span>
                 </Badge>
@@ -206,12 +216,22 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
               </span>
             </div>
 
-            {/* PatchCourt verdict badge */}
             {verdict && (
               <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-4 py-3">
-                {verdict === "BLOCK" ? <XCircle className="size-5 text-destructive" /> : verdict === "NEEDS_REVIEW" ? <AlertTriangle className="size-5 text-amber-400" /> : <CheckCircle2 className="size-5 text-teal-400" />}
+                {(() => {
+                  switch (verdict) {
+                    case "MERGE":
+                      return <CheckCircle2 className={cn("size-5", verdictColors.MERGE)} />;
+                    case "NEEDS_REVIEW":
+                      return <AlertTriangle className={cn("size-5", verdictColors.NEEDS_REVIEW)} />;
+                    case "BLOCK":
+                      return <XCircle className={cn("size-5", verdictColors.BLOCK)} />;
+                    default:
+                      return null;
+                  }
+                })()}
                 <div>
-                  <Badge style={{ backgroundColor: VERDICT_META[verdict].color, color: "#0b1220" }}>
+                  <Badge className={cn("bg-sev-critical text-black", verdict === "MERGE" && "bg-sev-low", verdict === "NEEDS_REVIEW" && "bg-sev-medium")}>
                     {VERDICT_META[verdict].label}
                   </Badge>
                   <span className="ml-2 text-xs text-muted-foreground">
@@ -221,37 +241,36 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
               </div>
             )}
 
-            {/* diff table */}
             {comp && (
               <div className="flex flex-col gap-5">
-                <DiffSection title="Confirmed / kept (corroborated)" color="#2dd4bf" count={confirmedM} empty="No corroborated issues — all SonarQube findings suppressed as unbacked.">
+                <DiffSection title="Confirmed / kept (corroborated)" color="var(--severity-low)" count={confirmedM} empty="No corroborated issues — all SonarQube findings suppressed as unbacked.">
                   {comp.confirmed.map((issue, i) => (
                     <div key={`c-${i}`} className="flex items-center gap-3 px-3 py-2">
                       <RowLabel file={issue.file} line={issue.line} />
                       <SeverityChip severity={issue.severity} />
-                      <span className="text-muted-foreground">{issue.rule}</span>
+                      <span className="text-muted-foreground font-mono text-[10px]">{issue.rule}</span>
                       <span className="ml-auto truncate text-[11px] text-muted-foreground">{issue.message}</span>
                     </div>
                   ))}
                 </DiffSection>
 
-                <DiffSection title="Down-tiered as unbacked (likely false positives)" color="#fbbf24" count={suppressed} empty="All SonarQube findings backed.">
+                <DiffSection title="Down-tiered as unbacked (likely false positives)" color="var(--severity-medium)" count={suppressed} empty="All SonarQube findings backed.">
                   {comp.down_tiered.map((issue, i) => (
                     <div key={`d-${i}`} className="flex items-center gap-3 px-3 py-2">
                       <RowLabel file={issue.file} line={issue.line} />
                       <SeverityChip severity={issue.severity} />
-                      <span className="text-muted-foreground">{issue.rule}</span>
+                      <span className="text-muted-foreground font-mono text-[10px]">{issue.rule}</span>
                       <span className="ml-auto truncate text-[11px] text-muted-foreground">{issue.message}</span>
                     </div>
                   ))}
                 </DiffSection>
 
-                <DiffSection title="Sonar-missed (PatchCourt caught, Sonar didn't)" color="#818cf8" count={sonarMissed} empty="No PatchCourt-only findings beyond SonarQube.">
+                <DiffSection title="Sonar-missed (PatchCourt caught, Sonar didn't)" color="var(--primary)" count={sonarMissed} empty="No PatchCourt-only findings beyond SonarQube.">
                   {comp.sonar_missed.map((issue, i) => (
                     <div key={`m-${i}`} className="flex items-center gap-3 px-3 py-2">
                       <RowLabel file={issue.file} line={issue.line} />
-                      <Badge variant="outline" className="border-indigo-400 text-indigo-400">T{issue.tier}</Badge>
-                      <span className="text-muted-foreground">{issue.agent}</span>
+                      <Badge variant="outline" className="border-primary text-primary text-[10px]">T{issue.tier}</Badge>
+                      <span className="text-muted-foreground text-[10px]">{issue.agent}</span>
                       <span className="ml-auto truncate text-[11px] text-muted-foreground">{issue.issue}</span>
                     </div>
                   ))}

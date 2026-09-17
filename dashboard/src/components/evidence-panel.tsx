@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BadgeCheck, FileCode2, TestTubes } from "lucide-react";
+import { BadgeCheck, FileCode2, TestTubes, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -13,13 +13,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AGENT_META, TIER_INFO, type Claim } from "@/lib/types";
+import { cn } from "cn";
 
-const SEVERITY_STYLE: Record<number, { color: string; label: string }> = {
-  1: { color: "#2dd4bf", label: "Minor" },
-  2: { color: "#7dd3fc", label: "Low" },
-  3: { color: "#fbbf24", label: "Medium" },
-  4: { color: "#fb923c", label: "High" },
-  5: { color: "#f87171", label: "Critical" },
+const SEVERITY_STYLE: Record<number, { color: string; label: string; class: string }> = {
+  5: { color: "var(--severity-critical)", label: "Critical", class: "sev-critical" },
+  4: { color: "var(--severity-high)", label: "High", class: "sev-high" },
+  3: { color: "var(--severity-medium)", label: "Medium", class: "sev-medium" },
+  2: { color: "var(--severity-low)", label: "Low", class: "sev-low" },
+  1: { color: "var(--severity-info)", label: "Info", class: "sev-info" },
 };
 
 function severityScore(c: Claim) {
@@ -29,31 +30,28 @@ function severityScore(c: Claim) {
 }
 
 function ClaimCard({ claim }: { claim: Claim }) {
-  const agent = AGENT_META[claim.agent] ?? { color: "#94a3b8", name: claim.agent || "Agent" };
+  const agent = AGENT_META[claim.agent] ?? { color: "var(--muted-foreground)", name: claim.agent || "Agent" };
   const sev = SEVERITY_STYLE[claim.severity] ?? SEVERITY_STYLE[3];
   const tier = TIER_INFO[claim.tier] ?? TIER_INFO[3];
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+    <div className="flex flex-col gap-3 rounded-md border border-border bg-card p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span
-          className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
-          style={{ backgroundColor: `${agent.color}1f`, color: agent.color }}
-        >
+        <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: `${agent.color}1f`, color: agent.color }}>
           <span className="size-1.5 rounded-full" style={{ backgroundColor: agent.color }} />
           {agent.name}
         </span>
-        <Badge variant="outline" title={tier.blurb} className="font-mono">
+        <Badge variant="outline" title={tier.blurb} className="font-mono text-[10px]">
           {tier.name.split(" — ")[0]}
         </Badge>
         {claim.corroborated && (
-          <Badge className="gap-1 bg-primary/15 text-primary hover:bg-primary/20">
-            <BadgeCheck className="size-3" /> corroborated
+          <Badge className="gap-1 bg-primary/15 text-primary hover:bg-primary/20 text-[10px]">
+            <BadgeCheck className="size-2.5" /> corroborated
           </Badge>
         )}
         <span className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: sev.color }}>
           <TestTubes className="size-3.5" />
-          {sev.label}
+          <span className={sev.class}>{sev.label}</span>
           {typeof claim.severity === "number" ? ` (${claim.severity}/5)` : ""}
         </span>
       </div>
@@ -67,9 +65,7 @@ function ClaimCard({ claim }: { claim: Claim }) {
           {claim.line > 0 ? `:${claim.line}` : ""}
         </span>
         <Separator orientation="vertical" className="h-3.5" />
-        <span>
-          confidence {(claim.confidence * 100).toFixed(0)}%
-        </span>
+        <span>confidence {(claim.confidence * 100).toFixed(0)}%</span>
         <Separator orientation="vertical" className="h-3.5" />
         <span className="text-primary">weight ×{tier.weight.toFixed(1)}</span>
       </div>
@@ -85,7 +81,7 @@ function ClaimCard({ claim }: { claim: Claim }) {
       </div>
 
       {claim.evidence.length > 0 && (
-        <ul className="flex flex-col gap-1 border-l-2 pl-3" style={{ borderColor: `${agent.color}55` }}>
+        <ul className="flex flex-col gap-1 border-l pl-3" style={{ borderColor: `${agent.color}55` }}>
           {claim.evidence.map((ev, i) => (
             <li key={i} className="text-xs text-muted-foreground">
               T{ev.tier}: {ev.text}

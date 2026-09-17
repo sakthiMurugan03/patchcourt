@@ -5,10 +5,22 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import type { Debate } from "@/lib/types";
+import { cn } from "cn";
 
 export function DebateTranscript({ debates }: { debates: Debate[] }) {
   if (debates.length === 0) {
-    return null;
+    return (
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Scale className="size-4 text-primary" /> Courtroom Debate
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="py-8 text-center text-muted-foreground">
+          No debate rounds recorded for this review.
+        </CardContent>
+      </Card>
+    );
   }
   return (
     <Card className="w-full">
@@ -22,25 +34,25 @@ export function DebateTranscript({ debates }: { debates: Debate[] }) {
           <div key={i} className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
               <p className="font-mono text-xs text-muted-foreground">{d.file}</p>
-              <Badge variant="outline" className="ml-auto">
+              <Badge variant="outline" className="ml-auto text-[10px]">
                 {d.rounds} round{d.rounds === 1 ? "" : "s"}
               </Badge>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-3">
+              <div className="rounded-md border border-red-500/25 bg-red-500/5 p-3">
                 <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-red-400 uppercase">
                   Prosecution — flags {d.issue}
                 </p>
                 <p className="text-sm text-foreground">{d.opposing}</p>
               </div>
-              <div className="rounded-lg border border-teal-500/25 bg-teal-500/5 p-3">
+              <div className="rounded-md border border-teal-500/25 bg-teal-500/5 p-3">
                 <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-teal-400 uppercase">
                   Defense — rebuttal
                 </p>
                 <p className="text-sm text-foreground">{d.supporting}</p>
               </div>
             </div>
-            <Separator />
+            {i < debates.length - 1 && <Separator />}
           </div>
         ))}
       </CardContent>

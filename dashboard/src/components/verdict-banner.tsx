@@ -22,19 +22,24 @@ export function VerdictBanner({ report }: { report: Report }) {
   );
   const toolClaims = report.claims.filter((c) => c.source === "tool").length;
 
+  const verdictColors = {
+    MERGE: { bg: "bg-green-500/15", border: "border-green-500", text: "text-green-400", badge: "bg-green-500 text-black" },
+    NEEDS_REVIEW: { bg: "bg-amber-500/15", border: "border-amber-500", text: "text-amber-400", badge: "bg-amber-500 text-black" },
+    BLOCK: { bg: "bg-red-500/15", border: "border-red-500", text: "text-red-400", badge: "bg-red-500 text-black" },
+  } as const;
+
+  const colors = verdictColors[report.verdict];
+
   return (
-    <Card className="w-full border-l-4" style={{ borderLeftColor: meta.color }}>
+    <Card className={cn("w-full border-l-4", colors.border)}>
       <CardContent className="flex flex-col gap-5 pt-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
-          <div
-            className="flex size-14 items-center justify-center rounded-full"
-            style={{ backgroundColor: `${meta.color}1f`, color: meta.color }}
-          >
-            <Icon className="size-7" />
+          <div className={cn("flex size-12 items-center justify-center rounded-full", colors.bg, colors.text)}>
+            <Icon className="size-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <Badge style={{ backgroundColor: meta.color, color: "#0b1220" }}>
+              <Badge className={cn("text-xs", colors.badge)}>
                 {meta.label}
               </Badge>
               <span className="text-xs text-muted-foreground">{meta.blurb}</span>
@@ -58,3 +63,5 @@ export function VerdictBanner({ report }: { report: Report }) {
     </Card>
   );
 }
+
+import { cn } from "cn";
