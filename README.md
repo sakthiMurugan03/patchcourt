@@ -37,8 +37,8 @@ GitHub PR ──► ingest ──► RAG (Qdrant) ──► evidence engine ─�
 | ![submit](docs/screens/01-submit.png) | ![verdict](docs/screens/02-verdict.png) |
 | **Evidence docket + debate** | **Tier legend + raw audit** |
 | ![evidence](docs/screens/03-evidence.png) | ![legend](docs/screens/04-legend-audit.png) |
-| **SonarQube Baseline tab** | **Redesigned shell (Sentry/Datadog style)** |
-| ![baseline](docs/screens/05-baseline.png) | ![redesign](docs/screens/06-redesign.png) |
+| **SonarQube Baseline tab** | **Redesigned shell (Sentry/Datadog style)** | **Final redesign — KPI + charts + table** |
+| ![baseline](docs/screens/05-baseline.png) | ![redesign](docs/screens/06-redesign.png) | ![final](docs/screens/07-final-redesign.png) |
 
 ## Architecture — five layers
 

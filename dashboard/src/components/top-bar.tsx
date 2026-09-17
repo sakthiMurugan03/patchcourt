@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Gavel, Wifi, WifiOff, Scale, RefreshCw } from "lucide-react";
+import { Gavel, Wifi, WifiOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { runDemo, submitReview } from "@/lib/api";
 import { cn } from "cn";
 
 export function TopBar({ onRunReview, onRunDemo, busy }: { onRunReview: (url: string) => void; onRunDemo: () => void; busy: boolean }) {
@@ -35,17 +34,6 @@ export function TopBar({ onRunReview, onRunDemo, busy }: { onRunReview: (url: st
 
   return (
     <header className="sticky top-0 z-30 h-16 border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/90 flex items-center gap-4 px-4">
-      <div className="flex items-center gap-3">
-        <Link href="/" className="flex items-center gap-2 text-lg font-semibold text-foreground">
-          <Scale className="size-5 text-primary" />
-          <span>PatchCourt</span>
-        </Link>
-        <span className="hidden sm:block h-6 w-px bg-border" />
-        <span className="hidden sm:block text-xs text-muted-foreground font-mono">
-          Evidence-gated AI code review
-        </span>
-      </div>
-
       <form onSubmit={handleSubmit} className="flex-1 flex items-center gap-2 max-w-2xl mx-auto">
         <label htmlFor="pr-url" className="sr-only">
           Pull Request URL
@@ -94,5 +82,3 @@ export function TopBar({ onRunReview, onRunDemo, busy }: { onRunReview: (url: st
     </header>
   );
 }
-
-import Link from "next/link";

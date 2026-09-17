@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BadgeCheck, FileCode2, TestTubes, ChevronDown } from "lucide-react";
+import { BadgeCheck, FileCode2, TestTubes, ChevronDown, ChevronRight, ChevronUp, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -15,6 +15,8 @@ import {
 import { AGENT_META, TIER_INFO, type Claim } from "@/lib/types";
 import { cn } from "cn";
 
+type ClaimWithExp = Claim & { _expanded?: boolean };
+
 const SEVERITY_STYLE: Record<number, { color: string; label: string; class: string }> = {
   5: { color: "var(--severity-critical)", label: "Critical", class: "sev-critical" },
   4: { color: "var(--severity-high)", label: "High", class: "sev-high" },
@@ -23,98 +25,132 @@ const SEVERITY_STYLE: Record<number, { color: string; label: string; class: stri
   1: { color: "var(--severity-info)", label: "Info", class: "sev-info" },
 };
 
+type SortKey = "severity" | "tier" | "confidence" | "file" | "source";
+type SortDirection = "asc" | "desc";
+
 function severityScore(c: Claim) {
-  return (
-    c.severity * (c.corroborated ? 1.25 : 1) * TIER_INFO[c.tier]?.weight
-  );
+  return c.severity * (c.corroborated ? 1.25 : 1) * TIER_INFO[c.tier]?.weight;
 }
 
-function ClaimCard({ claim }: { claim: Claim }) {
+function EvidenceRow({ claim, index, onToggle }: { claim: ClaimWithExp; index: number; onToggle: () => void }) {
   const agent = AGENT_META[claim.agent] ?? { color: "var(--muted-foreground)", name: claim.agent || "Agent" };
   const sev = SEVERITY_STYLE[claim.severity] ?? SEVERITY_STYLE[3];
   const tier = TIER_INFO[claim.tier] ?? TIER_INFO[3];
+  const expanded = claim._expanded;
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-border bg-card p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: `${agent.color}1f`, color: agent.color }}>
-          <span className="size-1.5 rounded-full" style={{ backgroundColor: agent.color }} />
-          {agent.name}
-        </span>
-        <Badge variant="outline" title={tier.blurb} className="font-mono text-[10px]">
-          {tier.name.split(" — ")[0]}
-        </Badge>
-        {claim.corroborated && (
-          <Badge className="gap-1 bg-primary/15 text-primary hover:bg-primary/20 text-[10px]">
-            <BadgeCheck className="size-2.5" /> corroborated
+    <>
+      <tr className="border-b border-border/50 hover:bg-accent/30 transition-colors">
+        <td className="px-3 py-2.5 text-center">
+          <button onClick={onToggle} className="p-1 hover:bg-accent rounded" aria-label={expanded ? "Collapse" : "Expand"}>
+            {expanded ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
+          </button>
+        </td>
+        <td className="px-3 py-2.5 text-center">
+          <span className={cn("inline-flex items-center justify-center w-5 h-5 rounded-full font-mono text-[10px] font-semibold", sev.class)}>
+            {claim.severity}
+          </span>
+        </td>
+        <td className="px-3 py-2.5 text-center">
+          <Badge variant="outline" title={tier.blurb} className="font-mono text-[10px]">
+            {tier.name.split(" — ")[0]}
           </Badge>
-        )}
-        <span className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: sev.color }}>
-          <TestTubes className="size-3.5" />
-          <span className={sev.class}>{sev.label}</span>
-          {typeof claim.severity === "number" ? ` (${claim.severity}/5)` : ""}
-        </span>
-      </div>
-
-      <p className="text-sm leading-relaxed text-foreground">{claim.issue}</p>
-
-      <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1">
-          <FileCode2 className="size-3.5" />
-          {claim.file}
-          {claim.line > 0 ? `:${claim.line}` : ""}
-        </span>
-        <Separator orientation="vertical" className="h-3.5" />
-        <span>confidence {(claim.confidence * 100).toFixed(0)}%</span>
-        <Separator orientation="vertical" className="h-3.5" />
-        <span className="text-primary">weight ×{tier.weight.toFixed(1)}</span>
-      </div>
-
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full rounded-full"
-          style={{
-            width: `${Math.min(100, Math.max(6, claim.confidence * 100))}%`,
-            backgroundColor: sev.color,
-          }}
-        />
-      </div>
-
-      {claim.evidence.length > 0 && (
-        <ul className="flex flex-col gap-1 border-l pl-3" style={{ borderColor: `${agent.color}55` }}>
-          {claim.evidence.map((ev, i) => (
-            <li key={i} className="text-xs text-muted-foreground">
-              T{ev.tier}: {ev.text}
-            </li>
-          ))}
-        </ul>
+        </td>
+        <td className="px-3 py-2.5 text-center">
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: `${agent.color}1f`, color: agent.color }}>
+            <span className="size-1.5 rounded-full" style={{ backgroundColor: agent.color }} />
+            {agent.name}
+          </span>
+        </td>
+        <td className="px-3 py-2.5">
+          <code className="font-mono text-xs break-all">{claim.file}{claim.line > 0 ? `:${claim.line}` : ""}</code>
+        </td>
+        <td className="px-3 py-2.5 text-center">
+          {claim.corroborated && (
+            <Badge className="gap-1 bg-primary/15 text-primary hover:bg-primary/20 text-[10px]">
+              <BadgeCheck className="size-2.5" /> Yes
+            </Badge>
+          )}
+        </td>
+        <td className="px-3 py-2.5 text-center font-mono text-xs text-muted-foreground">
+          ×{tier.weight.toFixed(1)}
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="bg-muted/30">
+          <td colSpan={8} className="p-0">
+            <div className="border-l-2 pl-4 ml-8" style={{ borderColor: `${agent.color}55` }}>
+              {claim.evidence.map((ev, i) => (
+                <div key={i} className="py-2 border-b border-border/50 last:border-0">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline" className="font-mono text-[10px] border-border">
+                      T{ev.tier}
+                    </Badge>
+                    <span className="text-muted-foreground">{ev.text}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   );
 }
-
-type SortKey = "severity" | "tier" | "confidence" | "file";
 
 export function EvidencePanel({ claims }: { claims: Claim[] }) {
   const [minSeverity, setMinSeverity] = useState("1");
   const [maxTier, setMaxTier] = useState("5");
   const [source, setSource] = useState("all");
   const [sortBy, setSortBy] = useState<SortKey>("severity");
+  const [sortDir, setSortDir] = useState<SortDirection>("desc");
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+
+  const toggleRow = (index: number) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const claimsWithExpanded = useMemo(() => claims.map((c, i) => ({ ...c, _expanded: expandedRows.has(i) })), [claims, expandedRows]);
 
   const visible = useMemo(() => {
     const min = Number(minSeverity);
     const max = Number(maxTier);
-    let list = claims.filter(
+    let list = claimsWithExpanded.filter(
       (c) => c.severity >= min && c.tier <= max && (source === "all" || c.source === source),
     );
     list = [...list].sort((a, b) => {
-      if (sortBy === "severity") return severityScore(b) - severityScore(a);
-      if (sortBy === "tier") return a.tier - b.tier;
-      if (sortBy === "confidence") return b.confidence - a.confidence;
-      return a.file.localeCompare(b.file);
+      let cmp = 0;
+      if (sortBy === "severity") cmp = severityScore(b) - severityScore(a);
+      else if (sortBy === "tier") cmp = a.tier - b.tier;
+      else if (sortBy === "confidence") cmp = b.confidence - a.confidence;
+      else if (sortBy === "source") cmp = a.source.localeCompare(b.source);
+      else cmp = a.file.localeCompare(b.file);
+      return sortDir === "asc" ? -cmp : cmp;
     });
     return list;
-  }, [claims, minSeverity, maxTier, source, sortBy]);
+  }, [claimsWithExpanded, minSeverity, maxTier, source, sortBy, sortDir]);
+
+  function SortableHeader({ label, key, currentSort, onSort }: { label: string; key: SortKey; currentSort: SortKey; onSort: (k: SortKey) => void }) {
+    const isActive = currentSort === key;
+    return (
+      <th
+        onClick={() => onSort(key)}
+        className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground select-none"
+        style={{ userSelect: "none" }}
+      >
+        <div className="flex items-center gap-1">
+          {label}
+          {isActive && (sortDir === "asc" ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />)}
+          {!isActive && <ArrowUpDown className="size-3.5 text-muted-foreground/30" />}
+        </div>
+      </th>
+    );
+  }
 
   return (
     <Card className="w-full">
@@ -154,32 +190,39 @@ export function EvidencePanel({ claims }: { claims: Claim[] }) {
               <SelectItem value="llm">LLM reasoning</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
-            <SelectTrigger className="h-8 w-[9.5rem] text-xs" aria-label="Sort">
-              <SelectValue placeholder="Sort" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="severity">Sort: weighted risk</SelectItem>
-              <SelectItem value="tier">Sort: tier</SelectItem>
-              <SelectItem value="confidence">Sort: confidence</SelectItem>
-              <SelectItem value="file">Sort: file</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </CardHeader>
-      <CardContent>
-        <p className="mb-4 text-xs text-muted-foreground">
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" role="table">
+            <thead>
+              <tr className="bg-muted/50 border-b border-border">
+                <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider w-8" />
+                <SortableHeader label="Sev" key="severity" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
+                <SortableHeader label="Tier" key="tier" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
+                <SortableHeader label="Source" key="source" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
+                <SortableHeader label="File:Line" key="file" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
+                <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Corroborated</th>
+                <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                    No evidence matches these filters.
+                  </td>
+                </tr>
+              ) : (
+                visible.map((c, i) => (
+                  <EvidenceRow key={i} claim={c} index={i} onToggle={() => toggleRow(i)} />
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 px-3 pb-3 text-xs text-muted-foreground">
           {visible.length} of {claims.length} claim(s) match the current filters.
-        </p>
-        <div className="flex flex-col gap-3">
-          {visible.length === 0 && (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              No evidence matches these filters.
-            </p>
-          )}
-          {visible.map((c, i) => (
-            <ClaimCard key={i} claim={c} />
-          ))}
         </div>
       </CardContent>
     </Card>
