@@ -1,8 +1,6 @@
 "use client";
 
 import { createContext, useContext, useState, ReactNode, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { runDemo as runDemoApi, submitReview } from "@/lib/api";
 import type { Report } from "@/lib/types";
 
 interface ReviewContextType {
@@ -13,9 +11,6 @@ interface ReviewContextType {
   setPhase: (phase: "idle" | "loading" | "done" | "error") => void;
   setError: (error: string) => void;
   clearReview: () => void;
-  runReview: (prUrl: string) => Promise<void>;
-  runDemo: () => Promise<void>;
-  busy: boolean;
 }
 
 const ReviewContext = createContext<ReviewContextType | null>(null);
@@ -24,7 +19,6 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
   const [report, setReport] = useState<Report | null>(null);
   const [phase, setPhase] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [error, setError] = useState<string>("");
-  const router = useRouter();
 
   const clearReview = () => {
     setReport(null);
@@ -32,51 +26,8 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
     setError("");
   };
 
-  const runReview = async (prUrl: string) => {
-    setPhase("loading");
-    setError("");
-    try {
-      const r = await submitReview(prUrl);
-      setReport(r);
-      setPhase("done");
-      router.push("/");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Review failed unexpectedly";
-      setError(msg);
-      setPhase("error");
-    }
-  };
-
-  const runDemo = async () => {
-    setPhase("loading");
-    setError("");
-    try {
-      const r = await runDemoApi();
-      setReport(r);
-      setPhase("done");
-      router.push("/");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Demo failed unexpectedly";
-      setError(msg);
-      setPhase("error");
-    }
-  };
-
   return (
-    <ReviewContext.Provider
-      value={{
-        report,
-        phase,
-        error,
-        setReport,
-        setPhase,
-        setError,
-        clearReview,
-        runReview,
-        runDemo,
-        busy: phase === "loading",
-      }}
-    >
+    <ReviewContext.Provider value={{ report, phase, error, setReport, setPhase, setError, clearReview }}>
       {children}
     </ReviewContext.Provider>
   );
