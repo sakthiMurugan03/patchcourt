@@ -172,13 +172,19 @@ def markdown(report: dict) -> str:
     return "\n".join(lines)
 
 
+def _reports_dir() -> "Path":
+    """Stable reports dir anchored to the project root (not cwd)."""
+    from pathlib import Path as _Path
+
+    return _Path(__file__).resolve().parents[2] / "reports"
+
+
 def write_report(pr_url: str, report: dict) -> tuple[str, str]:
-    import os
     from pathlib import Path
 
     owner, repo, num = parse_pr_url(pr_url)
     ts = _dt.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    out_dir = Path.cwd() / "reports"
+    out_dir = _reports_dir()
     out_dir.mkdir(exist_ok=True)
     base = out_dir / f"baseline-{owner}-{repo}-{num}-{ts}"
     md_path = f"{base}.md"
@@ -188,3 +194,83 @@ def write_report(pr_url: str, report: dict) -> tuple[str, str]:
     with open(json_path, "w") as fh:
         json.dump(report, fh, indent=2)
     return md_path, json_path
+
+
+def latest_report() -> dict | None:
+    """The most recently written baseline report (dict from JSON), or None."""
+    pattern = re.compile(r"^baseline-.*\.json$")
+    candidates = [p for p in _reports_dir().glob("baseline-*.json") if pattern.match(p.name)]
+    if not candidates:
+        return None
+    newest = max(candidates, key=lambda p: p.stat().st_mtime)
+    with open(newest) as fh:
+        return json.load(fh)
+
+
+def compare_with_review(report: dict, claims: list[dict], verdict: str, overall_score: float) -> dict:
+    """Reconcile SonarQube issues (in the PR) with PatchCourt claims.
+
+    Groups:
+    - confirmed/kept  — Sonar issue backed by a corroborated/tool PatchCourt claim
+      on the same file:line.
+    - down-tiered     — Sonar issue with no PatchCourt support on that line
+      (likely false positive → unbacked, N−M).
+    - sonar_missed    — strong PatchCourt tool claims SonarQube never reported.
+    """
+    by_line: dict[tuple, list[dict]] = {}
+    for c in claims:
+        line = int(c.get("line") or 0)
+        key = (c.get("file", ""), line)
+        by_line.setdefault(key, []).append(c)
+
+    confirmed: list[dict] = []
+    down_tiered: list[dict] = []
+    sonar_keys: set[tuple] = set()
+    for issue in report.get("issues", []):
+        if not issue.get("in_pr"):
+            continue
+        line = int(issue.get("line") or 0)
+        key = (issue.get("file", ""), line)
+        sonar_keys.add(key)
+        backed = any(
+            c.get("source") == "tool" or c.get("corroborated") or (c.get("tier") or 5) <= 2
+            for c in by_line.get(key, [])
+        )
+        (confirmed if backed else down_tiered).append(issue)
+
+    sonar_missed: list[dict] = []
+    for c in claims:
+        if int(c.get("line") or 0) == 0:
+            continue
+        if not (c.get("source") == "tool" or c.get("corroborated")):
+            continue
+        if (int(c.get("severity") or 0) < 3 and not c.get("corroborated")):
+            continue
+        key = (c.get("file", ""), int(c.get("line") or 0))
+        if key in sonar_keys:
+            continue
+        sonar_missed.append(
+            {
+                "file": c.get("file"),
+                "line": c.get("line"),
+                "severity": c.get("severity"),
+                "agent": c.get("agent"),
+                "tier": c.get("tier"),
+                "issue": (c.get("issue") or "")[:160],
+            }
+        )
+
+    n = len(confirmed) + len(down_tiered)
+    return {
+        "verdict": verdict,
+        "overall_score": overall_score,
+        "counts": {
+            "raw": n,
+            "confirmed": len(confirmed),
+            "suppressed": len(down_tiered),
+            "sonar_missed": len(sonar_missed),
+        },
+        "confirmed": confirmed,
+        "down_tiered": down_tiered,
+        "sonar_missed": sonar_missed,
+    }

@@ -37,6 +37,8 @@ GitHub PR ──► ingest ──► RAG (Qdrant) ──► evidence engine ─�
 | ![submit](docs/screens/01-submit.png) | ![verdict](docs/screens/02-verdict.png) |
 | **Evidence docket + debate** | **Tier legend + raw audit** |
 | ![evidence](docs/screens/03-evidence.png) | ![legend](docs/screens/04-legend-audit.png) |
+| **SonarQube Baseline tab** | |
+| ![baseline](docs/screens/05-baseline.png) | |
 
 ## Architecture — five layers
 
@@ -146,6 +148,11 @@ curl -X POST http://localhost:8000/api/review/demo             # offline demo
 curl -X POST http://localhost:8000/api/review \
   -H 'Content-Type: application/json' \
   -d '{"pr_url":"https://github.com/octocat/Hello-World/pull/1"}'
+
+curl http://localhost:8000/api/baseline/latest                 # newest saved SonarQube baseline (instant, offline-safe)
+curl -X POST http://localhost:8000/api/baseline \              # fresh comparison — needs SonarQube running
+  -H 'Content-Type: application/json' \
+  -d '{"pr_url":"https://github.com/octocat/Hello-World/pull/1"}'
 ```
 
 ### GitHub webhook
@@ -171,7 +178,15 @@ npx shadcn@latest add button card badge tabs select input separator skeleton tex
 Paste a PR URL (or hit **Offline Demo**). The courtroom-themed UI shows the
 verdict banner, the evidence docket (filter/sort by tier, severity, agent;
 corroborated pills), the debate transcript, a living T1–T5 legend, and a raw
-audit-payload toggle. `NEXT_PUBLIC_API_BASE` defaults to `http://localhost:8000`.
+audit-payload toggle. A second tab, **SonarQube Baseline**, renders the latest
+saved baseline report instantly (even when the Sonar container is down):
+raw finding count + severity breakdown, PatchCourt's verdict for the same PR,
+and a three-group diff (confirmed/corroborated, down-tiered as unbacked,
+Sonar-missed) with the headline
+`SonarQube raw: N | PatchCourt confirmed: M | suppressed as unbacked: N-M`.
+**Refresh baseline** runs a fresh `POST /api/baseline` (needs SonarQube up);
+**Open SonarQube UI** links to `http://localhost:9000`.
+`NEXT_PUBLIC_API_BASE` defaults to `http://localhost:8000`.
 
 ## LLM providers
 
@@ -235,6 +250,14 @@ total open issues, how many touch the PR, severity/type breakdown, and a
 row-per-issue table with the suggested PatchCourt tier. Env:
 `SONAR_URL`, `SONAR_TOKEN`, `SONAR_COMPONENT` (defaults in `.env.example`).
 
+The same JSON is served by `GET /api/baseline/latest` (newest saved report,
+no live SonarQube needed — the compose `api` mounts `./reports`). The
+dashboard **SonarQube Baseline** tab reads it on load; **Refresh baseline**
+calls `POST /api/baseline`, which fetches a fresh Sonar comparison, runs a
+PatchCourt review of the PR, and reconciles the two into confirmed
+(corroborated), down-tiered/unbacked, and Sonar-missed groups before saving a
+new report.
+
 ## Configuration (`.env`)
 
 Copy `.env.example` to `.env`. Everything is optional; the system runs offline
@@ -272,7 +295,7 @@ patchcourt/
 ├── judge/       # deterministic scoring + verdict + BLOCK-never-on-T5 rule
 ├── db/          # SQLAlchemy models + audit persistence (PostgreSQL)
 ├── worker/      # Celery app + review_pr task
-├── api/         # FastAPI: /api/review, /api/review/demo, /api/webhook/github
+├── api/         # FastAPI: /api/review, /api/review/demo, /api/webhook/github, /api/baseline/latest, /api/baseline
 ├── cli.py       # `python -m patchcourt review|baseline`
 ├── llm.py       # provider dispatch (mock/openai/claude/gemini/ollama)
 └── config.py    # .env settings + tier weights

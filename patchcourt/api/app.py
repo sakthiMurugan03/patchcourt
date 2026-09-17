@@ -95,6 +95,45 @@ async def review_demo() -> dict:
     return report.model_dump()
 
 
+@app.get("/api/baseline/latest")
+async def baseline_latest() -> dict:
+    """Most recently saved SonarQube baseline report (instant — no live calls)."""
+    from patchcourt.baseline import latest_report
+
+    report = latest_report()
+    if report is None:
+        raise HTTPException(status_code=404, detail="No baseline report saved yet — run a baseline first")
+    return report
+
+
+@app.post("/api/baseline")
+async def baseline_compare(req: ReviewRequest) -> dict:
+    """Fresh comparison: SonarQube issues vs the files touched by a PR, plus a
+    PatchCourt reconciliation run. Requires SonarQube + token (explicit action)."""
+    from patchcourt.baseline import build_report, compare_with_review, write_report
+
+    try:
+        parse_pr_url(req.pr_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        baseline = build_report(req.pr_url)
+        review = await run_review(req.pr_url)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Baseline comparison failed: {e}")
+
+    comparison = compare_with_review(
+        baseline, [c.model_dump() for c in review.claims], review.verdict, review.overall_score
+    )
+    baseline["patchcourt"] = {
+        "verdict": review.verdict,
+        "overall_score": review.overall_score,
+        "comparison": comparison,
+    }
+    write_report(req.pr_url, baseline)
+    return baseline
+
+
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}

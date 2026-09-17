@@ -30,10 +30,12 @@ export type Debate = {
   rounds: number;
 };
 
+export type Verdict = "MERGE" | "NEEDS_REVIEW" | "BLOCK";
+
 export type Report = {
   pr_url: string;
   overall_score: number;
-  verdict: "MERGE" | "NEEDS_REVIEW" | "BLOCK";
+  verdict: Verdict;
   files: FileReport[];
   claims: Claim[];
   debate_transcripts: Debate[];
@@ -58,4 +60,60 @@ export const TIER_INFO: Record<number, { name: string; weight: number; blurb: st
   3: { name: "T3 — Repo Policy", weight: 0.5, blurb: "Retrieved from repository policy/standards" },
   4: { name: "T4 — Git Precedent", weight: 0.4, blurb: "Pattern from history / similar past PRs" },
   5: { name: "T5 — LLM Assertion", weight: 0.1, blurb: "Model reasoning, never blocks alone" },
+};
+
+export type SonarSeverity = "BLOCKER" | "CRITICAL" | "MAJOR" | "MINOR" | "INFO";
+
+export type SonarIssue = {
+  file: string;
+  line: number;
+  severity: SonarSeverity;
+  type: "VULNERABILITY" | "BUG" | "CODE_SMELL";
+  rule: string;
+  message: string;
+  in_pr: boolean;
+  suggested_tier: number;
+};
+
+export type SonarSummary = {
+  vulnerabilities: number;
+  bugs: number;
+  code_smells: number;
+};
+
+export type BaselineComparison = {
+  verdict: Verdict;
+  overall_score: number;
+  counts: {
+    raw: number;
+    confirmed: number;
+    suppressed: number;
+    sonar_missed: number;
+  };
+  confirmed: SonarIssue[];
+  down_tiered: SonarIssue[];
+  sonar_missed: Array<{
+    file: string;
+    line: number;
+    severity: number;
+    agent: string;
+    tier: number;
+    issue: string;
+  }>;
+};
+
+export type BaselineReport = {
+  generated_at: string;
+  pr_url: string;
+  component: string;
+  server_url: string;
+  total_open_issues: number;
+  issues_touching_pr: number;
+  summary: SonarSummary;
+  issues: SonarIssue[];
+  patchcourt?: {
+    verdict: Verdict;
+    overall_score: number;
+    comparison: BaselineComparison;
+  };
 };

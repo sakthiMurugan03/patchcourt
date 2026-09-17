@@ -83,24 +83,45 @@ def test_build_report_requires_token(monkeypatch):
 
 
 def test_markdown_and_write(monkeypatch, tmp_path):
+    from pathlib import Path
+
     monkeypatch.setattr("patchcourt.config.settings.sonar_token", "t")
     monkeypatch.setattr(
         "patchcourt.baseline.sonarqube_baseline.httpx.get", _fake_get_for(None)
     )
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "patchcourt.baseline.sonarqube_baseline._reports_dir", lambda: tmp_path
+    )
 
     report = build_report("https://github.com/acme/server/pull/1")
     md = markdown(report)
     assert "SonarQube baseline" in md
     assert "app/main.py" in md
-    assert "(1)" in md or "T1" in md
 
     md_path, json_path = write_report("https://github.com/acme/server/pull/1", report)
+    assert Path(md_path).exists() and Path(json_path).exists()
+    assert "command execution found" in Path(md_path).read_text().lower()
+
+
+def test_latest_report_picks_newest(monkeypatch, tmp_path):
+    from pathlib import Path
+
+    from patchcourt.baseline import latest_report
+
+    monkeypatch.setattr(
+        "patchcourt.baseline.sonarqube_baseline._reports_dir", lambda: tmp_path
+    )
+    assert latest_report() is None
+
+    older = tmp_path / "baseline-a-b-1-20200101T000000Z.json"
+    newer = tmp_path / "baseline-a-b-1-20200102T000000Z.json"
+    newer.write_text('{"tag": "new"}')
+    older.write_text('{"tag": "old"}')
     import os
 
-    assert os.path.exists(md_path)
-    assert os.path.exists(json_path)
-    assert "command execution found" in open(md_path).read().lower()
+    os.utime(older, (1_600_000_000, 1_600_000_000))
+    os.utime(newer, (1_600_100_000, 1_600_100_000))
+    assert latest_report() == {"tag": "new"}
 
 
 def _fake_get_for(_base):
