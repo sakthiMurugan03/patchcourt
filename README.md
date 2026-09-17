@@ -34,11 +34,10 @@ GitHub PR ──► ingest ──► RAG (Qdrant) ──► evidence engine ─�
 
 | Overview (KPI, charts, verdict, evidence) | Evidence Docket (table, filters, expandable) |
 |---|---|
-| ![overview](<img width="2536" height="1382" alt="image" src="https://github.com/user-attachments/assets/13133abd-ea4e-47d7-99b7-2d8f26dbe55f" />
-) | ![evidence](<img width="2536" height="1382" alt="image" src="https://github.com/user-attachments/assets/ac4752fb-316b-4047-8ecd-137882933eb4" />
-) |
+| <img width="2536" height="1382" alt="image" src="https://github.com/user-attachments/assets/13133abd-ea4e-47d7-99b7-2d8f26dbe55f" />
+| <img width="2536" height="1382" alt="image" src="https://github.com/user-attachments/assets/ac4752fb-316b-4047-8ecd-137882933eb4" /> |
 | Debate Transcript | SonarQube Baseline (comparison) |
-| ![debate](<img width="2536" height="1382" alt="image" src="https://github.com/user-attachments/assets/7db52791-e6a3-4c08-8331-d7cf66d2fbdd" />
+| <img width="2536" height="1382" alt="image" src="https://github.com/user-attachments/assets/7db52791-e6a3-4c08-8331-d7cf66d2fbdd" />
 ) | ![baseline](![Uploading image.png…]()
 ) |
 
