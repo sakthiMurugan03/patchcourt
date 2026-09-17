@@ -51,8 +51,8 @@ const RATING_LABELS: Record<string, string> = {
   "5": "E",
 };
 
-function SeverityDot({ severity }: { severity: string }) {
-  const meta = SEVERITY_META[severity] ?? SEVERITY_META.INFO;
+function SeverityDot({ severity }: { severity: keyof typeof SEVERITY_META }) {
+  const meta = SEVERITY_META[severity];
   return (
     <span
       className="inline-flex items-center justify-center w-3 h-3 rounded-full"
@@ -345,25 +345,26 @@ export function SonarLivePanel() {
                   </tr>
                 </thead>
                 <tbody>
-                  {issueData?.issues?.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                        No issues found
+{issueData?.issues?.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                      No issues found
+                    </td>
+                  </tr>
+                ) : (
+                  issueData?.issues?.map((issue, i) => (
+                    <tr key={issue.key} className="border-b border-border/50 hover:bg-accent/30">
+                      <td className="px-3 py-2 text-center"><SeverityDot severity={issue.severity} /></td>
+                      <td className="px-3 py-2">
+                        <Badge variant="outline" className="text-[10px]">{issue.type}</Badge>
                       </td>
+                      <td className="px-3 py-2 font-mono text-[10px] text-muted-foreground">{issue.rule}</td>
+                      <td className="px-3 py-2 font-mono text-xs break-all">{issue.file}{issue.line ? `:${issue.line}` : ""}</td>
+                      <td className="px-3 py-2 text-[11px] text-foreground truncate max-w-xs">{issue.message}</td>
+                      <td className="px-3 py-2 text-center text-[10px] text-muted-foreground">{issue.status}</td>
                     </tr>
-                  ) : (
-                    issueData?.issues?.map((issue, i) => (
-                      <tr key={issue.key} className="border-b border-border/50 hover:bg-accent/30">
-                        <td className="px-3 py-2 text-center"><SeverityDot severity={issue.severity} /></td>
-                        <td className="px-3 py-2">
-                          <Badge variant="outline" className="text-[10px]">{issue.type}</Badge>
-                        </td>
-                        <td className="px-3 py-2 font-mono text-[10px] text-muted-foreground">{issue.rule}</td>
-                        <td className="px-3 py-2 font-mono text-xs break-all">{issue.file}{issue.line ? `:${issue.line}` : ""}</td>
-                        <td className="px-3 py-2 text-[11px] text-foreground truncate max-w-xs">{issue.message}</td>
-                        <td className="px-3 py-2 text-center text-[10px] text-muted-foreground">{issue.status}</td>
-                      </tr>
-                    )}
+                  ))
+                )}
                 </tbody>
               </table>
             </div>
@@ -389,112 +390,5 @@ export function SonarLivePanel() {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-const SEVERITY_META = {
-  BLOCKER: { color: "var(--severity-critical)", label: "BLOCKER" },
-  CRITICAL: { color: "var(--severity-high)", label: "CRITICAL" },
-  MAJOR: { color: "var(--severity-medium)", label: "MAJOR" },
-  MINOR: { color: "var(--severity-low)", label: "MINOR" },
-  INFO: { color: "var(--severity-info)", label: "INFO" },
-} as const;
-
-const RATING_LABELS: Record<string, string> = {
-  "1": "A",
-  "2": "B",
-  "3": "C",
-  "4": "D",
-  "5": "E",
-};
-
-
-const SEVERITY_META = {
-  BLOCKER: { color: "var(--severity-critical)", label: "BLOCKER" },
-  CRITICAL: { color: "var(--severity-high)", label: "CRITICAL" },
-  MAJOR: { color: "var(--severity-medium)", label: "MAJOR" },
-  MINOR: { color: "var(--severity-low)", label: "MINOR" },
-  INFO: { color: "var(--severity-info)", label: "INFO" },
-} as const;
-
-const RATING_LABELS: Record<string, string> = {
-  "1": "A",
-  "2": "B",
-  "3": "C",
-  "4": "D",
-  "5": "E",
-};
-
-
-const SEVERITY_META = {
-  BLOCKER: { color: "var(--severity-critical)", label: "BLOCKER" },
-  CRITICAL: { color: "var(--severity-high)", label: "CRITICAL" },
-  MAJOR: { color: "var(--severity-medium)", label: "MAJOR" },
-  MINOR: { color: "var(--severity-low)", label: "MINOR" },
-  INFO: { color: "var(--severity-info)", label: "INFO" },
-} as const;
-
-const RATING_LABELS: Record<string, string> = {
-  "1": "A",
-  "2": "B",
-  "3": "C",
-  "4": "D",
-  "5": "E",
-};
-
-function SeverityDot({ severity }: { severity: string }) {
-  const meta = SEVERITY_META[severity as keyof typeof SEVERITY_META] ?? SEVERITY_META.INFO;
-  return (
-    <span
-      className="inline-flex items-center justify-center w-3 h-3 rounded-full"
-      style={{ backgroundColor: meta.color }}
-      title={meta.label}
-    />
-  );
-}
-
-function RatingBadge({ rating }: { rating: string | undefined }) {
-  const label = rating ? RATING_LABELS[rating] : "—";
-  const num = rating ? parseInt(rating, 10) : 0;
-  const colors = ["", "text-green-400", "text-lime-400", "text-amber-400", "text-orange-400", "text-red-400"];
-  return (
-    <Badge variant="outline" className={cn("font-mono text-base", colors[num])}>
-      {label}
-    </Badge>
-  );
-}
-
-function StatTile({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
-  return (
-    <div className="rounded-md border border-border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
-        <span className="text-muted-foreground/50">{icon}</span>
-      </div>
-      <p className="mt-2 font-mono text-2xl font-semibold">{value}</p>
-    </div>
-  );
-}
-
-function SeverityBar({ counts }: { counts: Record<string, number> }) {
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
-  if (total === 0) return <p className="text-xs text-muted-foreground">No issues</p>;
-  const order = ["BLOCKER", "CRITICAL", "MAJOR", "MINOR", "INFO"] as const;
-  return (
-    <div className="flex items-center gap-1 h-4">
-      {order.map((s) => {
-        const count = counts[s] ?? 0;
-        const pct = total > 0 ? (count / total) * 100 : 0;
-        return (
-          <div
-            key={s}
-            className="flex-1 rounded transition-all"
-            style={{ width: `${Math.max(2, pct)}%`, backgroundColor: SEVERITY_META[s].color }}
-            title={`${SEVERITY_META[s].label}: ${count}`}
-          />
-        );
-      })}
-      <div className="ml-2 text-xs font-mono text-muted-foreground w-12 text-right">{total}</div>
-    </div>
   );
 }
