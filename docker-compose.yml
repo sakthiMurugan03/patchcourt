@@ -51,7 +51,7 @@ services:
       SANDBOX_IMAGE: patchcourt-sandbox:latest
       SANDBOX_WORKSPACE: /workspace
       SANDBOX_WORKDIR: ${SBX_HOST_DIR:-$PWD/.sandbox}
-      SONAR_URL: ${SONAR_URL:-http://localhost:9000}
+      SONAR_URL: ${SONAR_URL:-http://host.docker.internal:9000}
       SONAR_TOKEN: ${SONAR_TOKEN:-}
       SONAR_COMPONENT: ${SONAR_COMPONENT:-patchcourt}
     volumes:
