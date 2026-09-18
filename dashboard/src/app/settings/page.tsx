@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Shield, Key, CheckCircle2, AlertCircle, Loader2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "cn";
+import { LayoutWrapper } from "@/components/layout-wrapper";
+import { ViewHeader } from "@/components/view-header";
 
 interface LLMSettings {
   provider: string;
@@ -32,8 +33,9 @@ const PROVIDER_OPTIONS = [
   { value: "ollama", label: "Ollama (Local)", description: "Local LLM via Ollama server", icon: Key },
 ] as const;
 
-export default function SettingsPage() {
-  const router = useRouter();
+const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+
+function SettingsContent() {
   const [settings, setSettings] = useState<LLMSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -46,7 +48,7 @@ export default function SettingsPage() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     
-    fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000"}/api/settings/llm`, {
+    fetch(`${apiBase}/api/settings/llm`, {
       signal: controller.signal,
     })
       .then((res) => res.json())
@@ -96,8 +98,6 @@ export default function SettingsPage() {
     }
   };
 
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
-
   const handleTest = async () => {
     if (!settings) return;
     setTesting(true);
@@ -115,7 +115,12 @@ export default function SettingsPage() {
 
   const handleProviderChange = (provider: string) => {
     const opt = PROVIDER_OPTIONS.find((o) => o.value === provider);
-    setSettings((prev) => prev ? { ...prev, provider, use_mock_llm: provider === "mock", model: opt?.label === "Mock (Offline)" ? "mock" : prev.model } : null);
+    setSettings((prev) => prev ? { 
+      ...prev, 
+      provider, 
+      use_mock_llm: provider === "mock",
+      model: opt?.label === "Mock (Offline)" ? "mock" : prev.model 
+    } : null);
     setApiKey("");
     setTestResult(null);
   };
@@ -149,12 +154,10 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Settings</h1>
-          <p className="text-muted-foreground text-sm">Configure LLM provider and API keys</p>
-        </div>
-      </div>
+      <ViewHeader
+        title="Settings"
+        subtitle="Configure LLM provider and API keys"
+      />
 
       {/* Provider Selection */}
       <Card>
@@ -302,5 +305,13 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <LayoutWrapper>
+      <SettingsContent />
+    </LayoutWrapper>
   );
 }
