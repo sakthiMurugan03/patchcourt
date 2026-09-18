@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 
 from patchcourt.agents import PragmatistAgent, QualityAgent, SecurityAgent
 from patchcourt.agents.schemas import GraphState, PRContext
+from patchcourt.config import settings
 from patchcourt.debate import detect_conflicts, run_debate
 from patchcourt.evidence import EvidenceEngine, corroborate_claims
 from patchcourt.ingest import parse_pr_url, fetch_pr
@@ -67,17 +68,20 @@ def build_graph() -> StateGraph:
         tool_claims = await engine.analyze(pr.file_contents, rag)
         return {"tool_claims": tool_claims}
 
-    async def security(state: dict) -> dict[str, Any]:
+    async def run_agent(agent_cls, key: str, state: dict) -> dict[str, Any]:
+        """Run a single agent, serializing for Gemini."""
         pr, rag, tools = state["pr"], state["rag_results"], state["tool_claims"]
-        return {"security_claims": await SecurityAgent().run(pr, rag, tools)}
+        claims = await agent_cls().run(pr, rag, tools)
+        return {key: claims}
+
+    async def security(state: dict) -> dict[str, Any]:
+        return await run_agent(SecurityAgent, "security_claims", state)
 
     async def quality(state: dict) -> dict[str, Any]:
-        pr, rag, tools = state["pr"], state["rag_results"], state["tool_claims"]
-        return {"quality_claims": await QualityAgent().run(pr, rag, tools)}
+        return await run_agent(QualityAgent, "quality_claims", state)
 
     async def pragmatist(state: dict) -> dict[str, Any]:
-        pr, rag, tools = state["pr"], state["rag_results"], state["tool_claims"]
-        return {"pragmatist_claims": await PragmatistAgent().run(pr, rag, tools)}
+        return await run_agent(PragmatistAgent, "pragmatist_claims", state)
 
     async def merge_all(state: dict) -> dict[str, Any]:
         llm = state["security_claims"] + state["quality_claims"] + state["pragmatist_claims"]
@@ -105,23 +109,38 @@ def build_graph() -> StateGraph:
     g.add_node("ingest", ingest)
     g.add_node("rag", rag_index)
     g.add_node("evidence", evidence)
-    g.add_node("security", security)
-    g.add_node("quality", quality)
-    g.add_node("pragmatist", pragmatist)
-    g.add_node("merge_all", merge_all)
-    g.add_node("detect", detect)
-    g.add_node("debate", debate)
-    g.add_node("judge", judge)
+
+    # For Gemini free tier, serialize agent calls to respect 4 req/min limit.
+    # Other providers can run agents in parallel.
+    if settings.llm_provider == "gemini":
+        # Sequential: security -> quality -> pragmatist
+        g.add_node("security", security)
+        g.add_node("quality", quality)
+        g.add_node("pragmatist", pragmatist)
+        g.add_edge("evidence", "security")
+        g.add_edge("security", "quality")
+        g.add_edge("quality", "pragmatist")
+        g.add_edge("pragmatist", "merge_all")
+    else:
+        # Parallel (original behavior)
+        g.add_node("security", security)
+        g.add_node("quality", quality)
+        g.add_node("pragmatist", pragmatist)
+        g.add_edge("evidence", "security")
+        g.add_edge("evidence", "quality")
+        g.add_edge("evidence", "pragmatist")
+        g.add_edge("security", "merge_all")
+        g.add_edge("quality", "merge_all")
+        g.add_edge("pragmatist", "merge_all")
 
     g.add_edge(START, "ingest")
     g.add_edge("ingest", "rag")
     g.add_edge("rag", "evidence")
-    g.add_edge("evidence", "security")
-    g.add_edge("evidence", "quality")
-    g.add_edge("evidence", "pragmatist")
-    g.add_edge("security", "merge_all")
-    g.add_edge("quality", "merge_all")
-    g.add_edge("pragmatist", "merge_all")
+
+    g.add_node("merge_all", merge_all)
+    g.add_node("detect", detect)
+    g.add_node("debate", debate)
+    g.add_node("judge", judge)
     g.add_edge("merge_all", "detect")
     g.add_conditional_edges(
         "detect",

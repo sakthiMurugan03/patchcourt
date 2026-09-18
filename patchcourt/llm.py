@@ -3,13 +3,46 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import os
+import random
 import re
+import time
 from typing import Any
 
 from patchcourt.config import settings
 
+logger = logging.getLogger("patchcourt.llm")
+
 _PROVIDERS = ("mock", "openai", "claude", "gemini", "ollama")
+
+
+class _GeminiRateLimiter:
+    """Simple token-bucket rate limiter for Gemini free tier (~4 req/min)."""
+
+    def __init__(self, max_per_min: int = 4):
+        self.max_per_min = max_per_min
+        self._tokens = max_per_min
+        self._last_refill = time.monotonic()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        async with self._lock:
+            while True:
+                now = time.monotonic()
+                elapsed = now - self._last_refill
+                self._tokens = min(self.max_per_min, self._tokens + elapsed * (self.max_per_min / 60.0))
+                if self._tokens >= 1:
+                    self._tokens -= 1
+                    return
+                # Wait until next token is available
+                wait_time = (1 - self._tokens) * (60.0 / self.max_per_min)
+                await asyncio.sleep(wait_time)
+
+
+_GEMINI_LIMITER = _GeminiRateLimiter()
 
 
 class LLMClient:
@@ -68,11 +101,70 @@ class LLMClient:
     async def generate(self, system: str, user: str) -> dict[str, Any]:
         if self._use_mock:
             return self._mock_response(user)
-        resp = await self._real.ainvoke([
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ])
-        return self._extract_json(resp.content)
+
+        # Apply rate limiting for Gemini
+        if self._provider == "gemini":
+            await _GEMINI_LIMITER.acquire()
+
+        return await self._generate_with_retry(system, user)
+
+    async def _generate_with_retry(self, system: str, user: str, max_retries: int = 5) -> dict[str, Any]:
+        """Generate with exponential backoff on 429."""
+        last_error: Exception | None = None
+
+        for attempt in range(max_retries):
+            try:
+                resp = await self._real.ainvoke([
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ])
+                return self._extract_json(resp.content)
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+
+                # Check for 429 / rate limit
+                if "429" in error_str or "resource_exhausted" in error_str or "rate limit" in error_str:
+                    # Try to extract retry delay from error
+                    retry_delay = self._extract_retry_delay(e)
+                    if retry_delay is None:
+                        # Exponential backoff with jitter: 2^attempt * base + jitter
+                        base_delay = 2 ** attempt
+                        retry_delay = base_delay + random.uniform(0, 1)
+
+                    logger.warning(
+                        "Gemini rate limited (attempt %d/%d), waiting %.1fs",
+                        attempt + 1,
+                        max_retries,
+                        retry_delay,
+                    )
+                    await asyncio.sleep(retry_delay)
+                    continue
+
+                # Non-retryable error
+                raise
+
+        raise RuntimeError(f"LLM generate failed after {max_retries} retries: {last_error}") from last_error
+
+    @staticmethod
+    def _extract_retry_delay(e: Exception) -> float | None:
+        """Extract retry delay from Google API error if present."""
+        error_str = str(e)
+
+        # Try to parse retry_delay from error message (Google API format)
+        import re
+
+        # Look for "retryDelay": "123s" or similar
+        m = re.search(r'retryDelay["\s:]+(\d+)s', error_str)
+        if m:
+            return float(m.group(1))
+
+        # Look for "retry_delay" in structured error
+        m = re.search(r'"retry_delay"\s*:\s*(\d+)', error_str)
+        if m:
+            return float(m.group(1))
+
+        return None
 
     # ------------------------------------------------------------------
     @staticmethod
