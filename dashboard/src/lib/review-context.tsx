@@ -9,9 +9,11 @@ interface ReviewContextType {
   report: Report | null;
   phase: "idle" | "loading" | "done" | "error";
   error: string;
+  errorCategory: string;
   setReport: (report: Report | null) => void;
   setPhase: (phase: "idle" | "loading" | "done" | "error") => void;
   setError: (error: string) => void;
+  setErrorCategory: (category: string) => void;
   clearReview: () => void;
   runReview: (prUrl: string) => Promise<void>;
   runDemo: () => Promise<void>;
@@ -24,25 +26,31 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
   const [report, setReport] = useState<Report | null>(null);
   const [phase, setPhase] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [error, setError] = useState<string>("");
+  const [errorCategory, setErrorCategory] = useState<string>("unknown");
   const router = useRouter();
 
   const clearReview = () => {
     setReport(null);
     setPhase("idle");
     setError("");
+    setErrorCategory("unknown");
   };
 
   const runReview = async (prUrl: string) => {
     setPhase("loading");
     setError("");
+    setErrorCategory("unknown");
     try {
       const r = await submitReview(prUrl);
       setReport(r);
       setPhase("done");
       router.push("/");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Review failed unexpectedly";
+      const err = e instanceof Error ? e : new Error(String(e));
+      const msg = err.message;
+      const cat = (err as any).category || "unknown";
       setError(msg);
+      setErrorCategory(cat);
       setPhase("error");
     }
   };
@@ -50,14 +58,18 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
   const runDemo = async () => {
     setPhase("loading");
     setError("");
+    setErrorCategory("unknown");
     try {
       const r = await runDemoApi();
       setReport(r);
       setPhase("done");
       router.push("/");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Demo failed unexpectedly";
+      const err = e instanceof Error ? e : new Error(String(e));
+      const msg = err.message;
+      const cat = (err as any).category || "unknown";
       setError(msg);
+      setErrorCategory(cat);
       setPhase("error");
     }
   };
@@ -68,9 +80,11 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
         report,
         phase,
         error,
+        errorCategory,
         setReport,
         setPhase,
         setError,
+        setErrorCategory,
         clearReview,
         runReview,
         runDemo,

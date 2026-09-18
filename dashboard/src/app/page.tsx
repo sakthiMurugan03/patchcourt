@@ -8,7 +8,7 @@ import { EvidencePanel } from "@/components/evidence-panel";
 import { ReportForm } from "@/components/report-form";
 import { TierLegend } from "@/components/tier-legend";
 import { VerdictBanner } from "@/components/verdict-banner";
-import { runDemo, submitReview } from "@/lib/api";
+import { runDemo as runDemoApi, submitReview } from "@/lib/api";
 import type { Report } from "@/lib/types";
 import { cn } from "cn";
 import { useReview } from "@/lib/review-context";
@@ -29,47 +29,36 @@ import { ViewHeader } from "@/components/view-header";
 type Phase = "idle" | "loading" | "done" | "error";
 
 export default function Page() {
-  const { report, phase, error, setReport, setPhase, setError, clearReview } = useReview();
-  const [localReport, setLocalReport] = useState<Report | null>(report);
-  const [localPhase, setLocalPhase] = useState<Phase>(phase);
-  const [localError, setLocalError] = useState<string>(error);
-  const [localErrorCategory, setLocalErrorCategory] = useState<string>("unknown");
+  const { 
+    report, 
+    phase, 
+    error, 
+    errorCategory, 
+    setReport, 
+    setPhase, 
+    setError, 
+    setErrorCategory,
+    clearReview, 
+    runReview, 
+    runDemo 
+  } = useReview();
 
-  useEffect(() => {
-    setLocalReport(report);
-    setLocalPhase(phase);
-    setLocalError(error);
-  }, [report, phase, error]);
+  const [showNewReviewForm, setShowNewReviewForm] = useState(false);
 
-  async function load(fn: () => Promise<Report>) {
-    setLocalPhase("loading");
-    setLocalError("");
-    setLocalErrorCategory("unknown");
-    setPhase("loading");
-    setError("");
-    try {
-      const r = await fn();
-      setLocalReport(r);
-      setLocalPhase("done");
-      setReport(r);
-      setPhase("done");
-    } catch (e) {
-      const err = e instanceof Error ? e : new Error(String(e));
-      const msg = err.message;
-      const cat = (err as any).category || "unknown";
-      setLocalError(msg);
-      setLocalErrorCategory(cat);
-      setLocalPhase("error");
-      setError(msg);
-      setPhase("error");
-    }
-  }
-
-  function handleNewReview() {
-    setLocalReport(null);
-    setLocalPhase("idle");
+  const handleNewReview = () => {
     clearReview();
-  }
+    setShowNewReviewForm(true);
+  };
+
+  const handleReviewSubmit = async (prUrl: string) => {
+    setShowNewReviewForm(false);
+    await runReview(prUrl);
+  };
+
+  const handleDemo = async () => {
+    setShowNewReviewForm(false);
+    await runDemo();
+  };
 
   return (
     <LayoutWrapper>
@@ -77,7 +66,7 @@ export default function Page() {
         <ViewHeader
           title="Overview"
           actions={
-            localPhase === "done" && localReport && (
+            phase === "done" && report && (
               <button
                 onClick={handleNewReview}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -89,16 +78,16 @@ export default function Page() {
           }
         />
         <div className="flex flex-col gap-6">
-          {localPhase !== "done" && (
+          {phase === "idle" && (
             <ReportForm
-              onReview={(u) => load(() => submitReview(u))}
-              onDemo={() => load(runDemo)}
-              busy={localPhase === "loading"}
+              onReview={handleReviewSubmit}
+              onDemo={handleDemo}
+              busy={false}
             />
           )}
-          {localPhase === "loading" && <LoadingState />}
-          {localPhase === "error" && <ErrorState error={localError} category={localErrorCategory} onRetry={() => setLocalPhase("idle")} />}
-          {localPhase === "done" && localReport && <OverviewContent report={localReport} onNewReview={handleNewReview} />}
+          {phase === "loading" && <LoadingState />}
+          {phase === "error" && <ErrorState error={error} category={errorCategory} onRetry={() => setPhase("idle")} />}
+          {phase === "done" && report && <OverviewContent report={report} onNewReview={handleNewReview} />}
         </div>
       </div>
     </LayoutWrapper>
