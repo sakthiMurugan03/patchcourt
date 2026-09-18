@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Shield, Key, CheckCircle2, AlertCircle, Loader2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,24 +42,35 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState("");
   const [saveStatus, setSaveStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  const fetchSettings = async () => {
-    try {
-      const res = await fetch("/api/settings/llm");
-      const data = await res.json();
-      setSettings(data);
-    } catch (e) {
-      console.error("Failed to fetch LLM settings:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    
+    fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000"}/api/settings/llm`, {
+      signal: controller.signal,
+    })
+      .then((res) => res.json())
+      .then((data) => setSettings(data))
+      .catch((e) => {
+        if (e.name !== "AbortError") console.error("Failed to fetch LLM settings:", e);
+      })
+      .finally(() => {
+        clearTimeout(timeout);
+        setLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+      clearTimeout(timeout);
+    };
+  }, []);
 
   const handleSave = async () => {
     if (!settings) return;
     setSaving(true);
     setSaveStatus(null);
     try {
-      const res = await fetch("/api/settings/llm", {
+      const res = await fetch(`${apiBase}/api/settings/llm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -85,12 +96,14 @@ export default function SettingsPage() {
     }
   };
 
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+
   const handleTest = async () => {
     if (!settings) return;
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch("/api/settings/llm/test", { method: "POST" });
+      const res = await fetch(`${apiBase}/api/settings/llm/test`, { method: "POST" });
       const data = await res.json();
       setTestResult(data);
     } catch (e) {
