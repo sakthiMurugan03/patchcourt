@@ -1,8 +1,10 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Scale, XCircle, Info } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, CheckCircle2, Scale, XCircle, HelpCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tooltip } from "@/components/ui/tooltip";
 import { VERDICT_META, type Report } from "@/lib/types";
 import { cn } from "cn";
 
@@ -15,98 +17,142 @@ export function VerdictBanner({ report }: { report: Report }) {
         ? XCircle
         : AlertTriangle;
 
-  // Thresholds from config
+  // Thresholds
   const BLOCK_THRESHOLD = 10.0;
   const NEEDS_REVIEW_THRESHOLD = 4.0;
   const score = report.overall_score;
 
-  // Determine band
-  const band =
+  // Risk level words (capped at 30 for visual scale)
+  const VISUAL_MAX = 30;
+  const visualScore = Math.min(score, VISUAL_MAX);
+
+  // Human-readable risk level derived from score
+  const riskLevel =
     score >= BLOCK_THRESHOLD
-      ? { label: "BLOCK", color: "red", threshold: BLOCK_THRESHOLD }
+      ? { label: "Critical", color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/30" }
       : score >= NEEDS_REVIEW_THRESHOLD
-        ? { label: "NEEDS_REVIEW", color: "amber", threshold: NEEDS_REVIEW_THRESHOLD }
-        : { label: "MERGE", color: "green", threshold: NEEDS_REVIEW_THRESHOLD };
+        ? { label: "Moderate", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30" }
+        : { label: "Low", color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/30" };
 
-  // Build scale segments
-  const scaleSegments = [
-    { label: "MERGE", range: `[0, ${NEEDS_REVIEW_THRESHOLD})`, color: "green" },
-    { label: "NEEDS_REVIEW", range: `[${NEEDS_REVIEW_THRESHOLD}, ${BLOCK_THRESHOLD})`, color: "amber" },
-    { label: "BLOCK", range: `[${BLOCK_THRESHOLD}, ∞)`, color: "red" },
-  ];
-
-  const counts = report.claims.reduce(
-    (acc, c) => {
-      acc = { ...acc, [c.tier]: (acc[c.tier] ?? 0) + 1 };
-      return acc;
-    },
-    {} as Record<number, number>,
-  );
-  const toolClaims = report.claims.filter((c) => c.source === "tool").length;
-
+  // Verdict colors
   const verdictColors = {
-    MERGE: { bg: "bg-green-500/15", border: "border-green-500", text: "text-green-400", badge: "bg-green-500 text-black" },
-    NEEDS_REVIEW: { bg: "bg-amber-500/15", border: "border-amber-500", text: "text-amber-400", badge: "bg-amber-500 text-black" },
-    BLOCK: { bg: "bg-red-500/15", border: "border-red-500", text: "text-red-400", badge: "bg-red-500 text-black" },
+    MERGE: { color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500", badge: "bg-green-500 text-black" },
+    NEEDS_REVIEW: { color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500", badge: "bg-amber-500 text-black" },
+    BLOCK: { color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500", badge: "bg-red-500 text-black" },
   } as const;
 
-  const colors = verdictColors[report.verdict];
+  const vColors = verdictColors[report.verdict];
+
+  // Counts for the plain sentence
+  const toolClaims = report.claims.filter((c) => c.source === "tool").length;
+  const totalClaims = report.claims.length;
+
+  // Plain sentence
+  const verdictSentence =
+    report.verdict === "BLOCK"
+      ? `${toolClaims} tool-backed issue${toolClaims !== 1 ? "s" : ""} found — these must be fixed before this PR can merge.`
+      : report.verdict === "NEEDS_REVIEW"
+        ? `${toolClaims} tool-backed issue${toolClaims !== 1 ? "s" : ""} need review — consider addressing before merging.`
+        : `${toolClaims} tool-backed issue${toolClaims !== 1 ? "s" : ""} found — no blocking issues.`;
+
+  // Gauge marker position (percentage)
+  const markerPos = Math.min((visualScore / VISUAL_MAX) * 100, 100);
+
+  // Tooltip content
+  const [tooltipOpen, setTooltipOpen] = useState(false);
 
   return (
-    <Card className={cn("w-full border-l-4", colors.border)}>
-      <CardContent className="flex flex-col gap-5 pt-6 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-4">
-          <div className={cn("flex size-12 items-center justify-center rounded-full", colors.bg, colors.text)}>
-            <Icon className="size-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <Badge className={cn("text-xs", colors.badge)}>
-                {meta.label}
-              </Badge>
-              <span className="text-xs text-muted-foreground">{meta.blurb}</span>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {toolClaims} static-analysis finding(s), {counts[3] ?? 0} policy,{" "}
-              {counts[5] ?? 0} LLM-only reasoning — final score weighted by tier
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full sm:w-auto">
-          <div className="text-right">
-            <p className="font-mono text-4xl font-semibold tabular-nums" style={{ color: meta.color }}>
-              {report.overall_score.toFixed(1)}
-            </p>
-            <p className="text-xs text-muted-foreground">risk score (higher = riskier)</p>
-          </div>
-          {/* Threshold scale */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {scaleSegments.map((seg) => (
-              <Badge
-                key={seg.label}
-                variant="outline"
+    <Card className={cn("w-full border-l-4", vColors.border)}>
+      <CardContent className="p-6 space-y-5">
+        {/* Top row: Verdict + Risk Level + Gauge */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          {/* Verdict + Risk Level */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <Tooltip content="Click for score details">
+              <div
                 className={cn(
-                  "text-xs font-mono px-2 py-1",
-                  seg.label === band.label && "font-semibold border-2"
+                  "flex size-12 items-center justify-center rounded-full cursor-help",
+                  vColors.bg,
+                  vColors.color,
+                  "border",
+                  vColors.border,
                 )}
-                style={{
-                  borderColor: seg.color === "green" ? "green" : seg.color === "amber" ? "amber" : "red",
-                  color: seg.color === "green" ? "green" : seg.color === "amber" ? "amber" : "red",
-                }}
+                onClick={() => setTooltipOpen((p) => !p)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setTooltipOpen((p) => !p); }}
+                tabIndex={0}
+                role="button"
+                aria-label="Score details"
               >
-                {seg.label}: {seg.range}
-              </Badge>
-            ))}
+                <Icon className="size-6" />
+              </div>
+            </Tooltip>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <Badge className={cn("text-sm font-medium", vColors.badge)}>
+                  {meta.label}
+                </Badge>
+                <span className={cn("text-sm font-medium", riskLevel.color)}>
+                  {riskLevel.label} risk
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">{meta.blurb}</p>
+            </div>
           </div>
-          {/* Current position indicator */}
-          <div className="text-xs text-muted-foreground">
-            <Info className="size-3 inline mr-1" />
-            <span>
-              Score = Σ(severity × tier_weight × corroboration × confidence) | 
-              {band.label} threshold: {band.threshold}
-            </span>
+
+          {/* Horizontal Risk Gauge */}
+          <div className="flex-1 min-w-0 max-w-md">
+            <div className="relative h-8">
+              {/* Track */}
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-green-500/30 via-amber-500/30 to-red-500/30" />
+              {/* Zone labels */}
+              <div className="absolute top-10 left-0 right-0 flex justify-between text-[10px] text-muted-foreground font-mono px-1">
+                <span>Low</span>
+                <span>Moderate</span>
+                <span>High</span>
+                <span>Critical</span>
+              </div>
+              {/* Marker */}
+              <div
+                className={cn(
+                  "absolute top-1/2 -translate-y-1/2 transition-all duration-300",
+                  "w-1 h-6 bg-white border-2 rounded-full shadow-lg z-10",
+                  "border-slate-300 dark:border-slate-600",
+                )}
+                style={{ left: `${markerPos}%` }}
+                role="img"
+                aria-label={`Risk score: ${score.toFixed(1)} out of ${VISUAL_MAX}+`}
+              />
+              {/* Max label */}
+              <div className="absolute bottom-full right-0 text-[10px] text-muted-foreground font-mono">
+                {VISUAL_MAX}+ = maximum risk
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* Plain sentence */}
+        <div className={cn("p-4 rounded-lg border", vColors.border, vColors.bg)}>
+          <p className="text-sm text-foreground leading-relaxed">{verdictSentence}</p>
+        </div>
+
+        {/* Detail tooltip/popover */}
+        <Tooltip
+          content={(
+            <div className="space-y-2 text-left">
+              <div className="font-mono text-lg font-semibold text-foreground">{score.toFixed(1)}</div>
+              <div className="text-xs text-muted-foreground">Thresholds:</div>
+              <div className="text-xs font-mono grid grid-cols-3 gap-2 text-muted-foreground">
+                <div>MERGE <span className="text-foreground">[0, {NEEDS_REVIEW_THRESHOLD})</span></div>
+                <div>NEEDS_REVIEW <span className="text-foreground">[{NEEDS_REVIEW_THRESHOLD}, {BLOCK_THRESHOLD})</span></div>
+                <div>BLOCK <span className="text-foreground">[{BLOCK_THRESHOLD}, ∞)</span></div>
+              </div>
+              <div className="text-xs text-muted-foreground pt-1">
+                Formula: Σ(severity × tier_weight × corroboration × confidence)
+              </div>
+            </div>
+          )}>
+            <HelpCircle className="size-4 text-muted-foreground hover:text-foreground cursor-help transition-colors" />
+          </Tooltip>
       </CardContent>
     </Card>
   );
