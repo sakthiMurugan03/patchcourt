@@ -118,7 +118,8 @@ class LLMClient:
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ])
-                return self._extract_json(resp.content)
+                content = self._normalize_content(resp.content)
+                return self._extract_json(content)
             except Exception as e:
                 last_error = e
                 error_str = str(e).lower()
@@ -145,6 +146,25 @@ class LLMClient:
                 raise
 
         raise RuntimeError(f"LLM generate failed after {max_retries} retries: {last_error}") from last_error
+
+    @staticmethod
+    def _normalize_content(content: Any) -> str:
+        """Normalize LLM response content to a plain string.
+
+        langchain_google_genai may return content as a list of parts
+        (e.g., [{'text': '...'}, ...]) instead of a plain string.
+        """
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for part in content:
+                if isinstance(part, dict) and "text" in part:
+                    parts.append(part["text"])
+                else:
+                    parts.append(str(part))
+            return "".join(parts)
+        return str(content)
 
     @staticmethod
     def _extract_retry_delay(e: Exception) -> float | None:
