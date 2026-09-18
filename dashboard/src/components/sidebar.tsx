@@ -1,6 +1,8 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   LayoutDashboard,
   SearchCheck,
@@ -13,20 +15,20 @@ import {
   Settings,
 } from "lucide-react";
 import { cn } from "cn";
-import { useDashboard } from "@/components/dashboard-shell";
 
 const NAV_ITEMS = [
-  { tab: "overview", label: "Overview", icon: LayoutDashboard },
-  { tab: "evidence", label: "Evidence", icon: SearchCheck },
-  { tab: "debate", label: "Debate", icon: MessageSquare },
-  { tab: "baseline", label: "SonarQube Baseline", icon: BarChart2 },
-  { tab: "sonar-live", label: "SonarQube Live", icon: Activity },
-  { tab: "history", label: "History", icon: History },
-  { tab: "settings", label: "Settings", icon: Settings },
+  { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/evidence", label: "Evidence", icon: SearchCheck },
+  { href: "/debate", label: "Debate", icon: MessageSquare },
+  { href: "/baseline", label: "SonarQube Baseline", icon: BarChart2 },
+  { href: "/sonar-live", label: "SonarQube Live", icon: Activity },
+  { href: "/history", label: "History", icon: History },
+  { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 export function Sidebar() {
-  const { activeTab, switchTab } = useDashboard();
+  const pathname = usePathname();
+  const router = useRouter();
 
   return (
     <aside
@@ -34,31 +36,34 @@ export function Sidebar() {
       aria-label="Main navigation"
     >
       <div className="flex h-16 items-center justify-center border-b border-border">
-        <span className="flex items-center gap-2 text-lg font-semibold text-foreground" onClick={() => switchTab("overview")} style={{ cursor: "pointer" }}>
+        <Link href="/" className="flex items-center gap-2 text-lg font-semibold text-foreground">
           <Scale className="size-5 text-primary" />
           <span>PatchCourt</span>
-        </span>
+        </Link>
       </div>
 
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto" role="navigation">
         {NAV_ITEMS.map((item) => {
-          const isActive = activeTab === item.tab;
+          const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
           const Icon = item.icon;
           return (
-            <button
-              key={item.tab}
-              type="button"
-              onClick={() => switchTab(item.tab)}
+            <Link
+              key={item.href}
+              href={item.href}
               className={cn(
-                "flex items-center gap-3 w-full px-3 py-2.5 rounded-md text-sm font-medium transition-colors text-left",
+                "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors",
                 isActive
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent"
               )}
+              onClick={(e: React.MouseEvent) => {
+                e.preventDefault();
+                router.push(item.href);
+              }}
             >
               <Icon className="size-4 shrink-0" aria-hidden="true" />
               <span>{item.label}</span>
-            </button>
+            </Link>
           );
         })}
       </nav>

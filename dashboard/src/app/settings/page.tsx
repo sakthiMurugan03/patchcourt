@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import { Shield, Key, CheckCircle2, AlertCircle, Loader2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "cn";
+import { LayoutWrapper } from "@/components/layout-wrapper";
+import { ViewHeader } from "@/components/view-header";
 
 interface LLMSettings {
   provider: string;
@@ -34,8 +35,7 @@ const PROVIDER_OPTIONS = [
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
-export function SettingsTab() {
-  const router = useRouter();
+function SettingsContent() {
   const [settings, setSettings] = useState<LLMSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -44,23 +44,30 @@ export function SettingsTab() {
   const [apiKey, setApiKey] = useState("");
   const [saveStatus, setSaveStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  const fetchSettings = useCallback(async () => {
-    try {
-      const res = await fetch(`${apiBase}/api/settings/llm`);
-      const data = await res.json();
-      setSettings(data);
-    } catch (e) {
-      console.error("Failed to fetch LLM settings:", e);
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    
+    fetch(`${apiBase}/api/settings/llm`, {
+      signal: controller.signal,
+    })
+      .then((res) => res.json())
+      .then((data) => setSettings(data))
+      .catch((e) => {
+        if (e.name !== "AbortError") console.error("Failed to fetch LLM settings:", e);
+      })
+      .finally(() => {
+        clearTimeout(timeout);
+        setLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+      clearTimeout(timeout);
+    };
   }, []);
 
-  useEffect(() => {
-    fetchSettings();
-  }, [fetchSettings]);
-
-  const handleSave = useCallback(async () => {
+  const handleSave = async () => {
     if (!settings) return;
     setSaving(true);
     setSaveStatus(null);
@@ -89,9 +96,9 @@ export function SettingsTab() {
     } finally {
       setSaving(false);
     }
-  }, [settings, apiKey]);
+  };
 
-  const handleTest = useCallback(async () => {
+  const handleTest = async () => {
     if (!settings) return;
     setTesting(true);
     setTestResult(null);
@@ -104,9 +111,9 @@ export function SettingsTab() {
     } finally {
       setTesting(false);
     }
-  }, [settings]);
+  };
 
-  const handleProviderChange = useCallback((provider: string) => {
+  const handleProviderChange = (provider: string) => {
     const opt = PROVIDER_OPTIONS.find((o) => o.value === provider);
     setSettings((prev) => prev ? { 
       ...prev, 
@@ -116,23 +123,20 @@ export function SettingsTab() {
     } : null);
     setApiKey("");
     setTestResult(null);
-  }, []);
+  };
 
-  const handleModelChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleModelChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSettings((prev) => prev ? { ...prev, model: e.target.value } : null);
-  }, []);
+  };
 
-  const handleBaseUrlChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBaseUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSettings((prev) => prev ? { ...prev, base_url: e.target.value } : null);
-  }, []);
+  };
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <svg className="animate-spin size-8 text-primary" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-        </svg>
+        <Loader2 className="size-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -150,12 +154,10 @@ export function SettingsTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Settings</h1>
-          <p className="text-muted-foreground text-sm">Configure LLM provider and API keys</p>
-        </div>
-      </div>
+      <ViewHeader
+        title="Settings"
+        subtitle="Configure LLM provider and API keys"
+      />
 
       {/* Provider Selection */}
       <Card>
@@ -253,10 +255,10 @@ export function SettingsTab() {
 
           <div className="flex gap-3 pt-2">
             <Button onClick={handleSave} disabled={saving}>
-              {saving ? <svg className="animate-spin size-4 mr-2" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg> : null} Save Settings
+              {saving ? <Loader2 className="size-4 animate-spin mr-2" /> : null} Save Settings
             </Button>
             <Button variant="outline" onClick={handleTest} disabled={testing}>
-              {testing ? <svg className="animate-spin size-4 mr-2" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg> : null} Test Connection
+              {testing ? <Loader2 className="size-4 animate-spin mr-2" /> : null} Test Connection
             </Button>
           </div>
 
@@ -303,5 +305,13 @@ export function SettingsTab() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <LayoutWrapper>
+      <SettingsContent />
+    </LayoutWrapper>
   );
 }
