@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Scale, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Scale, XCircle, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { VERDICT_META, type Report } from "@/lib/types";
+import { cn } from "cn";
 
 export function VerdictBanner({ report }: { report: Report }) {
   const meta = VERDICT_META[report.verdict];
@@ -13,6 +14,27 @@ export function VerdictBanner({ report }: { report: Report }) {
       : report.verdict === "BLOCK"
         ? XCircle
         : AlertTriangle;
+
+  // Thresholds from config
+  const BLOCK_THRESHOLD = 10.0;
+  const NEEDS_REVIEW_THRESHOLD = 4.0;
+  const score = report.overall_score;
+
+  // Determine band
+  const band =
+    score >= BLOCK_THRESHOLD
+      ? { label: "BLOCK", color: "red", threshold: BLOCK_THRESHOLD }
+      : score >= NEEDS_REVIEW_THRESHOLD
+        ? { label: "NEEDS_REVIEW", color: "amber", threshold: NEEDS_REVIEW_THRESHOLD }
+        : { label: "MERGE", color: "green", threshold: NEEDS_REVIEW_THRESHOLD };
+
+  // Build scale segments
+  const scaleSegments = [
+    { label: "MERGE", range: `[0, ${NEEDS_REVIEW_THRESHOLD})`, color: "green" },
+    { label: "NEEDS_REVIEW", range: `[${NEEDS_REVIEW_THRESHOLD}, ${BLOCK_THRESHOLD})`, color: "amber" },
+    { label: "BLOCK", range: `[${BLOCK_THRESHOLD}, ∞)`, color: "red" },
+  ];
+
   const counts = report.claims.reduce(
     (acc, c) => {
       acc = { ...acc, [c.tier]: (acc[c.tier] ?? 0) + 1 };
@@ -50,18 +72,42 @@ export function VerdictBanner({ report }: { report: Report }) {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2.5">
-          <Scale className="size-5 text-muted-foreground" />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full sm:w-auto">
           <div className="text-right">
             <p className="font-mono text-4xl font-semibold tabular-nums" style={{ color: meta.color }}>
               {report.overall_score.toFixed(1)}
             </p>
-            <p className="text-xs text-muted-foreground">risk score</p>
+            <p className="text-xs text-muted-foreground">risk score (higher = riskier)</p>
+          </div>
+          {/* Threshold scale */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {scaleSegments.map((seg) => (
+              <Badge
+                key={seg.label}
+                variant="outline"
+                className={cn(
+                  "text-xs font-mono px-2 py-1",
+                  seg.label === band.label && "font-semibold border-2"
+                )}
+                style={{
+                  borderColor: seg.color === "green" ? "green" : seg.color === "amber" ? "amber" : "red",
+                  color: seg.color === "green" ? "green" : seg.color === "amber" ? "amber" : "red",
+                }}
+              >
+                {seg.label}: {seg.range}
+              </Badge>
+            ))}
+          </div>
+          {/* Current position indicator */}
+          <div className="text-xs text-muted-foreground">
+            <Info className="size-3 inline mr-1" />
+            <span>
+              Score = Σ(severity × tier_weight × corroboration × confidence) | 
+              {band.label} threshold: {band.threshold}
+            </span>
           </div>
         </div>
       </CardContent>
     </Card>
   );
 }
-
-import { cn } from "cn";

@@ -33,6 +33,7 @@ export default function Page() {
   const [localReport, setLocalReport] = useState<Report | null>(report);
   const [localPhase, setLocalPhase] = useState<Phase>(phase);
   const [localError, setLocalError] = useState<string>(error);
+  const [localErrorCategory, setLocalErrorCategory] = useState<string>("unknown");
 
   useEffect(() => {
     setLocalReport(report);
@@ -43,6 +44,7 @@ export default function Page() {
   async function load(fn: () => Promise<Report>) {
     setLocalPhase("loading");
     setLocalError("");
+    setLocalErrorCategory("unknown");
     setPhase("loading");
     setError("");
     try {
@@ -52,8 +54,11 @@ export default function Page() {
       setReport(r);
       setPhase("done");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Review failed unexpectedly";
+      const err = e instanceof Error ? e : new Error(String(e));
+      const msg = err.message;
+      const cat = (err as any).category || "unknown";
       setLocalError(msg);
+      setLocalErrorCategory(cat);
       setLocalPhase("error");
       setError(msg);
       setPhase("error");
@@ -92,7 +97,7 @@ export default function Page() {
             />
           )}
           {localPhase === "loading" && <LoadingState />}
-          {localPhase === "error" && <ErrorState error={localError} onRetry={() => setLocalPhase("idle")} />}
+          {localPhase === "error" && <ErrorState error={localError} category={localErrorCategory} onRetry={() => setLocalPhase("idle")} />}
           {localPhase === "done" && localReport && <OverviewContent report={localReport} onNewReview={handleNewReview} />}
         </div>
       </div>
@@ -122,35 +127,103 @@ function LoadingState() {
   );
 }
 
-function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
-  const isQuotaError = error.toLowerCase().includes("429") || 
-                       error.toLowerCase().includes("resource_exhausted") ||
-                       error.toLowerCase().includes("quota");
+function ErrorState({ error, category, onRetry }: { error: string; category?: string; onRetry: () => void }) {
+  const cat = category || "unknown";
   
+  const hints: Record<string, { icon: string; title: string; body: React.ReactNode }> = {
+    quota_exhausted: {
+      icon: "⚠",
+      title: "Gemini quota exhausted",
+      body: (
+        <>
+          The free tier allows ~4 requests/min. Switch to{" "}
+          <a href="/settings" className="underline hover:text-amber-300">Offline mode in Settings</a>
+          {", or add a new API key."}
+        </>
+      ),
+    },
+    service_busy: {
+      icon: "⏳",
+      title: "Gemini is busy",
+      body: "Please retry in a moment.",
+    },
+    auth_failed: {
+      icon: "🔐",
+      title: "Invalid API key",
+      body: (
+        <>
+          Check your API key in{" "}
+          <a href="/settings" className="underline hover:text-amber-300">Settings</a>
+          {"."}
+        </>
+      ),
+    },
+    model_not_found: {
+      icon: "🤖",
+      title: "Model not found",
+      body: (
+        <>
+          Check the model name in{" "}
+          <a href="/settings" className="underline hover:text-amber-300">Settings</a>
+          {"."}
+        </>
+      ),
+    },
+    pr_not_found: {
+      icon: "🔍",
+      title: "PR not found",
+      body: "Check the PR URL and try again.",
+    },
+    sonar_offline: {
+      icon: "📊",
+      title: "SonarQube offline",
+      body: "Check SonarQube is running and the URL/token are correct in Settings.",
+    },
+    connection_failed: {
+      icon: "🔌",
+      title: "Connection failed",
+      body: "Check the service is running and network is available.",
+    },
+    timeout: {
+      icon: "⏱",
+      title: "Request timed out",
+      body: "Please retry — the service may be slow right now.",
+    },
+    forbidden: {
+      icon: "🚫",
+      title: "Access denied",
+      body: "Check API key permissions.",
+    },
+    not_found: {
+      icon: "🔍",
+      title: "Not found",
+      body: "The requested resource was not found.",
+    },
+    rate_limited: {
+      icon: "⏳",
+      title: "Rate limited",
+      body: "Please wait and retry.",
+    },
+  };
+
+  const hint = hints[cat] || {
+    icon: "⚠",
+    title: "Something went wrong",
+    body: "Please try again.",
+  };
+
   return (
     <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-      {error}
-      {isQuotaError && (
-        <div className="mt-3 p-3 rounded-md border border-amber-500/30 bg-amber-500/10">
-          <p className="text-sm font-medium text-amber-400 flex items-center gap-1.5">
-            <span className="size-4">⚠</span>
-            Gemini quota exhausted (429)
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            The free tier allows ~4 requests/min. Switch to{" "}
-            <a href="/settings" className="underline hover:text-amber-300">Offline mode in Settings</a>
-            {", or add a new API key."}
-          </p>
-        </div>
-      )}
-      <p className="mt-1 text-xs text-muted-foreground">
-        Is the PatchCourt API running? Start it with{" "}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono">uvicorn patchcourt.api.app:app --port 8000</code>{" "}
-        — or run the demo.
+      <p className="flex items-center gap-2">
+        <span className="size-4">{hint.icon}</span>
+        <strong>{hint.title}</strong>
       </p>
-      <button onClick={onRetry} className="mt-3 text-xs font-medium underline-offset-2 hover:text-destructive">
-        Try again
-      </button>
+      <p className="mt-2 text-xs text-muted-foreground">{hint.body}</p>
+      <p className="mt-3 text-xs text-muted-foreground">
+        <button onClick={onRetry} className="font-medium underline-offset-2 hover:text-destructive">
+          Try again
+        </button>
+      </p>
     </div>
   );
 }

@@ -100,7 +100,10 @@ def test_baseline_latest_empty(tmp_path, monkeypatch):
     with TestClient(app, raise_server_exceptions=False) as c:
         resp = c.get("/api/baseline/latest")
         assert resp.status_code == 404
-        assert "No baseline report saved yet" in resp.json()["detail"]
+        data = resp.json()
+        detail = data.get("detail", data)
+        assert detail["category"] == "not_found"
+        assert "baseline" in detail["message"].lower() or "report" in detail["message"].lower()
 
 
 def test_baseline_latest_returns_saved(tmp_path, monkeypatch):
@@ -149,7 +152,10 @@ def test_baseline_compare_invalid_url(tmp_path, monkeypatch):
     with TestClient(app, raise_server_exceptions=False) as c:
         resp = c.post("/api/baseline", json={"pr_url": "https://evil.com/x/pull/1"})
         assert resp.status_code == 400
-        assert "Not a valid GitHub PR URL" in resp.json()["detail"]
+        data = resp.json()
+        detail = data.get("detail", data)
+        assert detail["category"] == "pr_not_found"
+        assert "github pr" in detail["message"].lower()
 
 
 def test_baseline_compare_full(tmp_path, monkeypatch):

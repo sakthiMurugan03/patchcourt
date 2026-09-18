@@ -2,6 +2,11 @@ import type { BaselineReport, Report, SonarHealth, SonarQualityGate, SonarMeasur
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+interface FriendlyError {
+  category: string;
+  message: string;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = {
     method,
@@ -14,14 +19,24 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   const res = await fetch(`${API_BASE}${path}`, init);
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
+    let category = "unknown";
+    let message = `HTTP ${res.status}`;
     try {
       const data = await res.json();
-      if (typeof data.detail === "string") detail = data.detail;
+      if (data && typeof data === "object") {
+        if (typeof data.detail === "string") {
+          message = data.detail;
+        } else if (data.detail && typeof data.detail === "object") {
+          category = data.detail.category || "unknown";
+          message = data.detail.message || `HTTP ${res.status}`;
+        }
+      }
     } catch {
-      /* keep default */
+      /* keep defaults */
     }
-    throw new Error(detail);
+    const err = new Error(message) as Error & { category?: string };
+    err.category = category;
+    throw err;
   }
   return (await res.json()) as T;
 }
@@ -34,16 +49,26 @@ export function runDemo(): Promise<Report> {
   return request<Report>("POST", "/api/review/demo");
 }
 
-export async function getBaselineLatest(): Promise<BaselineReport> {
+export async function getBaselineLatest(): Promise<BaselineReport | null> {
   const res = await fetch(`${API_BASE}/api/baseline/latest`);
-  if (res.status === 404) return null as unknown as BaselineReport;
+  if (res.status === 404) return null;
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
+    let category = "unknown";
+    let message = `HTTP ${res.status}`;
     try {
       const data = await res.json();
-      if (typeof data.detail === "string") detail = data.detail;
+      if (data && typeof data === "object") {
+        if (typeof data.detail === "string") {
+          message = data.detail;
+        } else if (data.detail && typeof data.detail === "object") {
+          category = data.detail.category || "unknown";
+          message = data.detail.message || `HTTP ${res.status}`;
+        }
+      }
     } catch {}
-    throw new Error(detail);
+    const err = new Error(message) as Error & { category?: string };
+    err.category = category;
+    throw err;
   }
   return (await res.json()) as BaselineReport;
 }
