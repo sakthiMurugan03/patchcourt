@@ -1,16 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Gavel, Wifi, WifiOff, RefreshCw } from "lucide-react";
+import { Gavel, Wifi, WifiOff, RefreshCw, Shield, Key, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "cn";
 import { useReview } from "@/lib/review-context";
 
+interface LLMSettings {
+  provider: string;
+  model: string;
+  use_mock_llm: boolean;
+}
+
 export function TopBar() {
   const { runReview, runDemo, busy } = useReview();
   const [apiStatus, setApiStatus] = useState<"checking" | "online" | "offline">("checking");
   const [prUrl, setPrUrl] = useState("");
+  const [llmSettings, setLlmSettings] = useState<LLMSettings | null>(null);
 
   useEffect(() => {
     const checkApi = async () => {
@@ -29,6 +36,27 @@ export function TopBar() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const fetchLlmSettings = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000"}/api/settings/llm`);
+        if (res.ok) {
+          const data = await res.json();
+          setLlmSettings({
+            provider: data.provider,
+            model: data.model,
+            use_mock_llm: data.use_mock_llm,
+          });
+        }
+      } catch {
+        // silent fail
+      }
+    };
+    fetchLlmSettings();
+    const interval = setInterval(fetchLlmSettings, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (prUrl.trim()) {
@@ -40,6 +68,24 @@ export function TopBar() {
   const handleDemo = async () => {
     await runDemo();
     setPrUrl("");
+  };
+
+  const getProviderIcon = (provider: string) => {
+    switch (provider) {
+      case "gemini": return <Key className="size-3" />;
+      case "openai": return <Shield className="size-3" />;
+      case "ollama": return <Shield className="size-3" />;
+      default: return <Circle className="size-3" />;
+    }
+  };
+
+  const getProviderLabel = (provider: string) => {
+    switch (provider) {
+      case "gemini": return "Gemini";
+      case "openai": return "OpenAI";
+      case "ollama": return "Ollama";
+      default: return "Mock";
+    }
   };
 
   return (
@@ -68,6 +114,19 @@ export function TopBar() {
       </form>
 
       <div className="flex items-center gap-3 ml-auto">
+        {/* LLM Provider Status Chip */}
+        {llmSettings && (
+          <div className={cn(
+            "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium font-mono",
+            llmSettings.use_mock_llm ? "bg-green-500/10 text-green-400" : "bg-primary/10 text-primary"
+          )} title={`LLM: ${getProviderLabel(llmSettings.provider)} (${llmSettings.model})`}>
+            {getProviderIcon(llmSettings.provider)}
+            <span>LLM: {getProviderLabel(llmSettings.provider)}</span>
+            <span className="text-muted-foreground">|</span>
+            <span>{llmSettings.use_mock_llm ? "Offline" : "Live"}</span>
+          </div>
+        )}
+
         <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium" role="status" aria-live="polite">
           {apiStatus === "checking" && (
             <>

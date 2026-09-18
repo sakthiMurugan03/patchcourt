@@ -5,6 +5,8 @@ import pytest
 
 from patchcourt.agents.schemas import PRContext
 from patchcourt.graph import run_review
+from patchcourt.runtime_llm_config import reset_runtime_config
+from patchcourt.llm import reset_llm
 
 
 class FakeLLM:
@@ -52,21 +54,15 @@ def fake_llm(claims_by_agent):
 
 @pytest.fixture(autouse=True)
 def _offline_llm(monkeypatch):
-    from patchcourt import llm as llm_mod
     from patchcourt.rag import store as rag_store
 
     monkeypatch.setattr(rag_store, "_client", None)
     monkeypatch.setattr(rag_store, "_EMBEDDER", None)
     monkeypatch.setattr(rag_store, "_sentence_transformers", None)
-
-    class S:
-        use_mock_llm = True
-        llm_api_key = "x"
-        llm_model = "mock"
-        llm_base_url = "http://localhost"
-        debate_max_rounds = 2
-
-    monkeypatch.setattr(llm_mod, "settings", S())
+    
+    # Reset runtime config and LLM client to use mock mode
+    reset_runtime_config()
+    reset_llm()
     yield
 
 

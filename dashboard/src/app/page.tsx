@@ -123,9 +123,26 @@ function LoadingState() {
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+  const isQuotaError = error.toLowerCase().includes("429") || 
+                       error.toLowerCase().includes("resource_exhausted") ||
+                       error.toLowerCase().includes("quota");
+  
   return (
     <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
       {error}
+      {isQuotaError && (
+        <div className="mt-3 p-3 rounded-md border border-amber-500/30 bg-amber-500/10">
+          <p className="text-sm font-medium text-amber-400 flex items-center gap-1.5">
+            <span className="size-4">⚠</span>
+            Gemini quota exhausted (429)
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            The free tier allows ~4 requests/min. Switch to{" "}
+            <a href="/settings" className="underline hover:text-amber-300">Offline mode in Settings</a>
+            {", or add a new API key."}
+          </p>
+        </div>
+      )}
       <p className="mt-1 text-xs text-muted-foreground">
         Is the PatchCourt API running? Start it with{" "}
         <code className="rounded bg-muted px-1 py-0.5 font-mono">uvicorn patchcourt.api.app:app --port 8000</code>{" "}

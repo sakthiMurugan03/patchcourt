@@ -6,13 +6,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import random
 import re
 import time
 from typing import Any
 
-from patchcourt.config import settings
+from patchcourt.runtime_llm_config import get_runtime_config
 
 logger = logging.getLogger("patchcourt.llm")
 
@@ -49,51 +48,52 @@ class LLMClient:
     """Thin wrapper that returns structured JSON from an LLM or from a deterministic mock."""
 
     def __init__(self) -> None:
-        provider = "mock" if settings.use_mock_llm else (settings.llm_provider or "mock")
+        cfg = get_runtime_config()
+        provider = "mock" if cfg.use_mock_llm else (cfg.provider or "mock")
         if provider not in _PROVIDERS:
             raise ValueError(
                 f"Unknown LLM_PROVIDER {provider!r} — choose one of {', '.join(_PROVIDERS)}"
             )
         self._provider = provider
-        self._model = settings.llm_model
+        self._model = cfg.model
         if provider == "mock":
             self._use_mock = True
             self._real = None
             return
         self._use_mock = False
-        self._real = self._build_real(provider)
+        self._real = self._build_real(provider, cfg)
 
-    def _build_real(self, provider: str):
+    def _build_real(self, provider: str, cfg):
         if provider == "ollama":
             from langchain_openai import ChatOpenAI
 
             return ChatOpenAI(
-                model=settings.llm_model or "llama3.1",
+                model=cfg.model or "llama3.1",
                 api_key="ollama",
-                base_url=settings.llm_base_url or "http://localhost:11434/v1",
+                base_url=cfg.base_url or "http://localhost:11434/v1",
                 temperature=0,
             )
-        key = (settings.llm_api_key or "").strip()
-        if not key:
+        key = (cfg.api_key or "").strip()
+        if not key and provider not in {"mock", "ollama"}:
             raise ValueError(f"LLM_PROVIDER={provider} requires LLM_API_KEY (or use LLM_PROVIDER=mock)")
         if provider == "openai":
             from langchain_openai import ChatOpenAI
 
             return ChatOpenAI(
-                model=settings.llm_model,
+                model=cfg.model,
                 api_key=key,
-                base_url=settings.llm_base_url,
+                base_url=cfg.base_url,
                 temperature=0,
             )
         if provider == "claude":
             from langchain_anthropic import ChatAnthropic
 
-            return ChatAnthropic(model=settings.llm_model or "claude-3-5-sonnet-latest", api_key=key, temperature=0)
+            return ChatAnthropic(model=cfg.model or "claude-3-5-sonnet-latest", api_key=key, temperature=0)
         if provider == "gemini":
             from langchain_google_genai import ChatGoogleGenerativeAI
 
             return ChatGoogleGenerativeAI(
-                model=settings.llm_model or "gemini-2.5-flash", api_key=key, temperature=0
+                model=cfg.model or "gemini-2.5-flash", api_key=key, temperature=0
             )
         raise ValueError(f"Unsupported provider {provider}")
 

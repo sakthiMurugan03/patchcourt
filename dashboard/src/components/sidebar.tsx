@@ -12,6 +12,7 @@ import {
   Scale,
   Gavel,
   Activity,
+  Settings,
 } from "lucide-react";
 import { cn } from "cn";
 
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { href: "/baseline", label: "SonarQube Baseline", icon: BarChart2 },
   { href: "/sonar-live", label: "SonarQube Live", icon: Activity },
   { href: "/history", label: "History", icon: History },
+  { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
 export function Sidebar() {
