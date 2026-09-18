@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { OverviewTab } from "@/components/tabs/overview-tab";
 import { EvidenceTab } from "@/components/tabs/evidence-tab";
@@ -13,48 +13,98 @@ import { SettingsTab } from "@/components/tabs/settings-tab";
 
 type TabKey = "overview" | "evidence" | "debate" | "baseline" | "sonar-live" | "history" | "settings";
 
-const TAB_ORDER: TabKey[] = ["overview", "evidence", "debate", "baseline", "sonar-live", "history", "settings"];
+const VALID_TABS: TabKey[] = ["overview", "evidence", "debate", "baseline", "sonar-live", "history", "settings"];
 
-const TAB_ROUTE_MAP: Record<TabKey, string> = {
-  overview: "/",
-  evidence: "/evidence",
-  debate: "/debate",
-  baseline: "/baseline",
-  "sonar-live": "/sonar-live",
-  history: "/history",
-  settings: "/settings",
-};
+interface DashboardContextType {
+  activeTab: TabKey;
+  switchTab: (tab: TabKey) => void;
+}
 
-export function DashboardShell() {
+const DashboardContext = createContext<DashboardContextType | null>(null);
+
+export function useDashboard() {
+  const context = useContext(DashboardContext);
+  if (!context) {
+    throw new Error("useDashboard must be used within a DashboardProvider");
+  }
+  return context;
+}
+
+interface DashboardProviderProps {
+  children: ReactNode;
+  value: DashboardContextType;
+}
+
+export function DashboardProvider({ children }: DashboardProviderProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [mounted, setMounted] = useState(false);
 
-  // Initialize activeTab from URL on mount (SSR-safe)
+  // Initialize activeTab from ?tab= query param on mount
   useEffect(() => {
-    const path = pathname || "/";
-    let tab: TabKey = "overview";
-    for (const [key, route] of Object.entries(TAB_ROUTE_MAP)) {
-      if (route === path || (route !== "/" && path.startsWith(route))) {
-        tab = key as TabKey;
-        break;
-      }
+    const tab = searchParams?.get("tab");
+    if (tab && VALID_TABS.includes(tab as TabKey)) {
+      setActiveTab(tab as TabKey);
     }
-    setActiveTab(tab);
     setMounted(true);
-  }, [pathname]);
+  }, [searchParams]);
 
   // Sync URL when tab changes (shallow, no navigation)
   const switchTab = useCallback((tab: TabKey) => {
     if (tab === activeTab) return;
     setActiveTab(tab);
-    const route = TAB_ROUTE_MAP[tab];
-    // Use replaceState to avoid history entry and navigation
-    router.replace(route, { scroll: false });
-  }, [router, activeTab]);
+    const params = new URLSearchParams(searchParams?.toString());
+    if (tab === "overview") {
+      params.delete("tab");
+    } else {
+      params.set("tab", tab);
+    }
+    // Use replace to avoid history entry and navigation
+    router.replace(`/?${params.toString()}`, { scroll: false });
+  }, [router, searchParams, activeTab]);
+
+  return (
+    <DashboardContext.Provider value={{ activeTab, switchTab }}>
+      <LayoutWrapper>
+        <div className="flex flex-col gap-6 min-h-0 flex-1">
+          {children}
+        </div>
+      </LayoutWrapper>
+    </DashboardContext.Provider>
+  );
+}
+
+export function DashboardShell() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [mounted, setMounted] = useState(false);
+
+  // Initialize activeTab from ?tab= query param on mount
+  useEffect(() => {
+    const tab = searchParams?.get("tab");
+    if (tab && VALID_TABS.includes(tab as TabKey)) {
+      setActiveTab(tab as TabKey);
+    }
+    setMounted(true);
+  }, [searchParams]);
+
+  // Sync URL when tab changes (shallow, no navigation)
+  const switchTab = useCallback((tab: TabKey) => {
+    if (tab === activeTab) return;
+    setActiveTab(tab);
+    const params = new URLSearchParams(searchParams?.toString());
+    if (tab === "overview") {
+      params.delete("tab");
+    } else {
+      params.set("tab", tab);
+    }
+    // Use replace to avoid history entry and navigation
+    router.replace(`/?${params.toString()}`, { scroll: false });
+  }, [router, searchParams, activeTab]);
 
   // Don't render until mounted to avoid hydration mismatch
   if (!mounted) {
@@ -94,10 +144,12 @@ export function DashboardShell() {
   };
 
   return (
-    <LayoutWrapper>
-      <div className="flex flex-col gap-6 min-h-0 flex-1">
-        {renderTab()}
-      </div>
-    </LayoutWrapper>
+    <DashboardProvider value={{ activeTab, switchTab }}>
+      <LayoutWrapper>
+        <div className="flex flex-col gap-6 min-h-0 flex-1">
+          {renderTab()}
+        </div>
+      </LayoutWrapper>
+    </DashboardProvider>
   );
 }
