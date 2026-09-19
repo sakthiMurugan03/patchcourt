@@ -10,6 +10,8 @@ from patchcourt.config import settings
 logger = logging.getLogger("patchcourt.sonar_live")
 
 SONAR_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+# Shorter timeout for measures endpoint which can hang
+SONAR_MEASURES_TIMEOUT = httpx.Timeout(5.0, connect=3.0)
 
 
 class SonarQubeUnavailable(Exception):
@@ -17,14 +19,14 @@ class SonarQubeUnavailable(Exception):
     pass
 
 
-async def _sonar_get(path: str, params: dict | None = None) -> dict[str, Any]:
+async def _sonar_get(path: str, params: dict | None = None, timeout: httpx.Timeout | None = None) -> dict[str, Any]:
     """Make a GET request to SonarQube API."""
     url = f"{settings.sonar_url.rstrip('/')}/api{path}"
     headers = {}
     if settings.sonar_token:
         headers["Authorization"] = f"Bearer {settings.sonar_token}"
     try:
-        async with httpx.AsyncClient(timeout=SONAR_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=timeout or SONAR_TIMEOUT) as client:
             resp = await client.get(url, params=params, headers=headers)
             if resp.status_code == 404:
                 raise SonarQubeUnavailable("SonarQube returned 404")
@@ -32,6 +34,24 @@ async def _sonar_get(path: str, params: dict | None = None) -> dict[str, Any]:
             return resp.json()
     except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
         logger.warning("SonarQube request failed: %s", e)
+        raise SonarQubeUnavailable(f"SonarQube unavailable: {e}") from e
+
+
+async def _sonar_get_measures(path: str, params: dict | None = None) -> dict[str, Any]:
+    """Make a GET request to SonarQube measures API with shorter timeout."""
+    url = f"{settings.sonar_url.rstrip('/')}/api{path}"
+    headers = {}
+    if settings.sonar_token:
+        headers["Authorization"] = f"Bearer {settings.sonar_token}"
+    try:
+        async with httpx.AsyncClient(timeout=SONAR_MEASURES_TIMEOUT) as client:
+            resp = await client.get(url, params=params, headers=headers)
+            if resp.status_code == 404:
+                raise SonarQubeUnavailable("SonarQube returned 404")
+            resp.raise_for_status()
+            return resp.json()
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+        logger.warning("SonarQube measures request failed: %s", e)
         raise SonarQubeUnavailable(f"SonarQube unavailable: {e}") from e
 
 
@@ -49,7 +69,7 @@ async def get_quality_gate(project_key: str | None = None) -> dict[str, Any]:
 
 
 async def get_measures(project_key: str | None = None) -> dict[str, Any]:
-    """Get component measures (metrics)."""
+    """Get component measures (metrics) with short timeout."""
     metric_keys = [
         "bugs",
         "vulnerabilities",
@@ -65,12 +85,28 @@ async def get_measures(project_key: str | None = None) -> dict[str, Any]:
         "component": project_key or settings.sonar_project_key,
         "metricKeys": ",".join(metric_keys),
     }
-    data = await _sonar_get("/measures/component", params=params)
-    measures = data.get("component", {}).get("measures", [])
-    result = {"available": True, "project_key": project_key or settings.sonar_project_key}
-    for m in measures:
-        result[m["metric"]] = m.get("value")
-    return result
+    try:
+        data = await _sonar_get_measures("/measures/component", params=params)
+        measures = data.get("component", {}).get("measures", [])
+        result = {"available": True, "project_key": project_key or settings.sonar_project_key}
+        for m in measures:
+            result[m["metric"]] = m.get("value")
+        return result
+    except SonarQubeUnavailable:
+        # Return unavailable but with default structure so frontend shows "—"
+        return {
+            "available": False,
+            "project_key": project_key or settings.sonar_project_key,
+            "bugs": None,
+            "vulnerabilities": None,
+            "code_smells": None,
+            "security_hotspots": None,
+            "coverage": None,
+            "duplicated_lines_density": None,
+            "reliability_rating": None,
+            "security_rating": None,
+            "sqale_rating": None,
+        }
 
 
 async def get_issues(
