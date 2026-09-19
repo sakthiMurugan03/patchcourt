@@ -36,7 +36,8 @@ GitHub PR ──► ingest ──► RAG (Qdrant) ──► evidence engine ─�
 |---|---|
 | <img width="2536" alt="Overview" src="https://github.com/user-attachments/assets/13133abd-ea4e-47d7-99b7-2d8f26dbe55f" /> | <img width="2536" alt="Evidence" src="https://github.com/user-attachments/assets/ac4752fb-316b-4047-8ecd-137882933eb4" /> |
 | **Debate Transcript** | **SonarQube Baseline (comparison)** |
-| <img width="2536" alt="Debate" src="https://github.com/user-attachments/assets/7db52791-e6a3-4c08-8331-d7cf66d2fbdd" /> | <img width="2536" alt="Baseline" src="https://github.com/user-attachments/assets/0d314586-d09d-4d37-b6a4-2a0dae5b6cce" /> |
+| <img width="2560" height="1378" alt="image" src="https://github.com/user-attachments/assets/6cb65cc9-b839-4807-8a38-3c9c60a2c8ab" />
+ | <img width="2536" alt="Baseline" src="https://github.com/user-attachments/assets/0d314586-d09d-4d37-b6a4-2a0dae5b6cce" /> |
 
 ## Architecture — five layers
 
