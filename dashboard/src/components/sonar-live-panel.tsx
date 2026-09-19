@@ -142,16 +142,18 @@ export function SonarLivePanel() {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
 
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+
   const fetchAll = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
 
     try {
       const [healthRes, qgRes, measuresRes, issuesRes] = await Promise.all([
-        fetch("/api/sonar/health").then(r => r.json()),
-        fetch("/api/sonar/quality-gate").then(r => r.json()),
-        fetch("/api/sonar/measures").then(r => r.json()),
-        fetch(`/api/sonar/issues?page=${1}&page_size=20`).then(r => r.json()),
+        fetch(`${apiBase}/api/sonar/health`).then(r => r.json()),
+        fetch(`${apiBase}/api/sonar/quality-gate`).then(r => r.json()),
+        fetch(`${apiBase}/api/sonar/measures`).then(r => r.json()),
+        fetch(`${apiBase}/api/sonar/issues?page=${1}&page_size=20`).then(r => r.json()),
       ]);
       setHealth(healthRes);
       setQualityGate(qgRes);
@@ -171,7 +173,7 @@ export function SonarLivePanel() {
   const fetchIssuesPage = useCallback(async (page: number) => {
     setRefreshing(true);
     try {
-      const res = await fetch(`/api/sonar/issues?page=${page}&page_size=20`);
+      const res = await fetch(`${apiBase}/api/sonar/issues?page=${page}&page_size=20`);
       const data = await res.json();
       setIssues(data);
       setCurrentPage(page);
