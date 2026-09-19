@@ -19,7 +19,7 @@ class SonarQubeUnavailable(Exception):
 
 async def _sonar_get(path: str, params: dict | None = None) -> dict[str, Any]:
     """Make a GET request to SonarQube API."""
-    url = f"{settings.sonar_host_url.rstrip('/')}/api{path}"
+    url = f"{settings.sonar_url.rstrip('/')}/api{path}"
     headers = {}
     if settings.sonar_token:
         headers["Authorization"] = f"Bearer {settings.sonar_token}"
