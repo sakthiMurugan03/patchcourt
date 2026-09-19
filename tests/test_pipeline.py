@@ -62,6 +62,8 @@ def _offline_llm(monkeypatch):
     
     # Reset runtime config and LLM client to use mock mode
     reset_runtime_config()
+    from patchcourt.runtime_llm_config import update_runtime_config
+    update_runtime_config(use_mock_llm=True)
     reset_llm()
     yield
 

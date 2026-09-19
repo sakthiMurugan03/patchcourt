@@ -41,15 +41,15 @@ export function DebateTranscript({ debates }: { debates: Debate[] }) {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-red-500/25 bg-red-500/5 p-3">
                 <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-red-400 uppercase">
-                  Prosecution — flags {d.issue}
+                  Prosecution — {d.claim?.issue || d.issue}
                 </p>
-                <p className="text-sm text-foreground">{d.opposing}</p>
+                <p className="text-sm text-foreground">{d.supporting}</p>
               </div>
               <div className="rounded-md border border-teal-500/25 bg-teal-500/5 p-3">
                 <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-teal-400 uppercase">
                   Defense — rebuttal
                 </p>
-                <p className="text-sm text-foreground">{d.supporting}</p>
+                <p className="text-sm text-foreground">{d.opposing}</p>
               </div>
             </div>
             {i < debates.length - 1 && <Separator />}

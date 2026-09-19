@@ -23,6 +23,10 @@ export type FileReport = {
 };
 
 export type Debate = {
+  claim: {
+    file: string;
+    issue: string;
+  };
   file: string;
   issue: string;
   supporting: string;

@@ -92,7 +92,7 @@ def build_graph() -> StateGraph:
         return "debate" if state.get("conflicts") else "judge"
 
     async def debate(state: dict) -> dict[str, Any]:
-        debated = run_debate(state.get("conflicts", []), state.get("pr", PRContext()))
+        debated = await run_debate(state.get("conflicts", []), state.get("pr", PRContext()))
         return {"debated_claims": debated}
 
     async def judge(state: dict) -> dict[str, Any]:
