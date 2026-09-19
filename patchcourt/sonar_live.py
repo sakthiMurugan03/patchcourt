@@ -68,8 +68,33 @@ async def get_quality_gate(project_key: str | None = None) -> dict[str, Any]:
     }
 
 
+async def _count_issues_by_type(project_key: str) -> dict[str, int]:
+    """Fetch all issues (up to 500) and count by type."""
+    try:
+        # Fetch with large page size to get counts by type
+        data = await _sonar_get(
+            "/issues/search",
+            params={
+                "componentKeys": project_key,
+                "ps": 500,  # Large page size to get type distribution
+            },
+        )
+        issues = data.get("issues", [])
+        counts: dict[str, int] = {"BUG": 0, "VULNERABILITY": 0, "CODE_SMELL": 0, "SECURITY_HOTSPOT": 0}
+        for issue in issues:
+            issue_type = issue.get("type", "")
+            if issue_type in counts:
+                counts[issue_type] += 1
+        return counts
+    except SonarQubeUnavailable:
+        return {"BUG": 0, "VULNERABILITY": 0, "CODE_SMELL": 0, "SECURITY_HOTSPOT": 0}
+
+
 async def get_measures(project_key: str | None = None) -> dict[str, Any]:
-    """Get component measures (metrics) with short timeout."""
+    """Get component measures (metrics) with derived counts from issues."""
+    pk = project_key or settings.sonar_project_key
+    
+    # Try to get measures API data (with short timeout)
     metric_keys = [
         "bugs",
         "vulnerabilities",
@@ -82,31 +107,46 @@ async def get_measures(project_key: str | None = None) -> dict[str, Any]:
         "sqale_rating",
     ]
     params = {
-        "component": project_key or settings.sonar_project_key,
+        "component": pk,
         "metricKeys": ",".join(metric_keys),
     }
+    
+    measures_data: dict[str, Any] = {"available": False, "project_key": pk}
+    
+    # Try to get real measures data (with short timeout)
     try:
         data = await _sonar_get_measures("/measures/component", params=params)
         measures = data.get("component", {}).get("measures", [])
-        result = {"available": True, "project_key": project_key or settings.sonar_project_key}
+        measures_data = {"available": True, "project_key": pk}
         for m in measures:
-            result[m["metric"]] = m.get("value")
-        return result
+            measures_data[m["metric"]] = m.get("value")
     except SonarQubeUnavailable:
-        # Return unavailable but with default structure so frontend shows "—"
-        return {
-            "available": False,
-            "project_key": project_key or settings.sonar_project_key,
-            "bugs": None,
-            "vulnerabilities": None,
-            "code_smells": None,
-            "security_hotspots": None,
-            "coverage": None,
-            "duplicated_lines_density": None,
-            "reliability_rating": None,
-            "security_rating": None,
-            "sqale_rating": None,
-        }
+        pass  # Will fill from issues below
+    
+    # Get issue type counts (source of truth for count tiles)
+    issue_counts = await _count_issues_by_type(pk)
+    
+    # Merge: use derived counts for tiles, measures API for ratings/coverage
+    result = {
+        "available": True,
+        "project_key": pk,
+        "bugs": measures_data.get("bugs", issue_counts.get("BUG", 0)),
+        "vulnerabilities": measures_data.get("vulnerabilities", issue_counts.get("VULNERABILITY", 0)),
+        "code_smells": measures_data.get("code_smells", issue_counts.get("CODE_SMELL", 0)),
+        "security_hotspots": measures_data.get("security_hotspots", issue_counts.get("SECURITY_HOTSPOT", 0)),
+        "coverage": measures_data.get("coverage"),
+        "duplicated_lines_density": measures_data.get("duplicated_lines_density"),
+        "reliability_rating": measures_data.get("reliability_rating"),
+        "security_rating": measures_data.get("security_rating"),
+        "sqale_rating": measures_data.get("sqale_rating"),
+    }
+    
+    # Ensure count fields are int (not None)
+    for key in ["bugs", "vulnerabilities", "code_smells", "security_hotspots"]:
+        if result[key] is None:
+            result[key] = 0
+    
+    return result
 
 
 async def get_issues(
