@@ -360,9 +360,11 @@ export function SonarLivePanel() {
                       <td className="px-3 py-2">
                         <Badge variant="outline" className="text-[10px]">{issue.type}</Badge>
                       </td>
-                      <td className="px-3 py-2 font-mono text-[10px] text-muted-foreground">{issue.rule}</td>
-                      <td className="px-3 py-2 font-mono text-xs break-all">{issue.file}{issue.line ? `:${issue.line}` : ""}</td>
-                      <td className="px-3 py-2 text-[11px] text-foreground truncate max-w-xs">{issue.message}</td>
+                      <td className="px-3 py-2 font-mono text-[10px] text-muted-foreground break-words whitespace-normal" title={issue.rule}>{issue.rule}</td>
+                      <td className="px-3 py-2 font-mono text-xs break-words whitespace-normal" title={`${issue.file}${issue.line ? `:${issue.line}` : ""}`}>{issue.file}{issue.line ? `:${issue.line}` : ""}</td>
+                      <td className="px-3 py-2 text-[11px] text-foreground max-w-sm whitespace-normal">
+                        <p className="line-clamp-2 leading-snug" title={issue.message}>{issue.message}</p>
+                      </td>
                       <td className="px-3 py-2 text-center text-[10px] text-muted-foreground">{issue.status}</td>
                     </tr>
                   ))

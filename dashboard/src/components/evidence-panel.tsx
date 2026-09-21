@@ -73,8 +73,15 @@ function EvidenceRow({ claim, onToggle }: { claim: ClaimWithExp; onToggle: () =>
             {agent.name}
           </span>
         </td>
+        <td className="px-3 py-2.5 w-40">
+          <code className="font-mono text-xs break-words whitespace-normal" title={`${claim.file}${claim.line > 0 ? `:${claim.line}` : ""}`}>
+            {claim.file}{claim.line > 0 ? `:${claim.line}` : ""}
+          </code>
+        </td>
         <td className="px-3 py-2.5">
-          <code className="font-mono text-xs break-all">{claim.file}{claim.line > 0 ? `:${claim.line}` : ""}</code>
+          <p className="line-clamp-2 text-xs leading-snug" title={claim.issue}>
+            {claim.issue}
+          </p>
         </td>
         <td className="px-3 py-2.5 text-center">
           {claim.corroborated && (
@@ -91,13 +98,16 @@ function EvidenceRow({ claim, onToggle }: { claim: ClaimWithExp; onToggle: () =>
         <tr className="bg-muted/30">
           <td colSpan={8} className="p-0">
             <div className="border-l-2 pl-4 ml-8" style={{ borderColor: `${agent.color}55` }}>
+              <p className="py-2 text-xs text-foreground" title={claim.issue}>
+                <span className="font-medium">Finding:</span> {claim.issue}
+              </p>
               {claim.evidence.map((ev, i) => (
                 <div key={i} className="py-2 border-b border-border/50 last:border-0">
-                  <div className="flex items-center gap-2 text-xs">
+                  <div className="flex items-start gap-2 text-xs">
                     <Badge variant="outline" className="font-mono text-[10px] border-border">
                       T{ev.tier}
                     </Badge>
-                    <span className="text-muted-foreground">{ev.text}</span>
+                    <span className="text-muted-foreground whitespace-normal break-words" title={ev.text}>{ev.text}</span>
                   </div>
                 </div>
               ))}
@@ -221,6 +231,7 @@ export function EvidencePanel({ claims }: { claims: Claim[] }) {
                 <SortableHeader label="Tier" key="tier" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
                 <SortableHeader label="Source" key="source" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
                 <SortableHeader label="File:Line" key="file" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
+                <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Finding</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Corroborated</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Weight</th>
               </tr>
@@ -229,7 +240,14 @@ export function EvidencePanel({ claims }: { claims: Claim[] }) {
               {visible.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                    No evidence matches these filters.
+                    {claims.length === 0 ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <BadgeCheck className="size-4 text-green-400" />
+                        No findings — this PR is clean.
+                      </span>
+                    ) : (
+                      "No evidence matches these filters."
+                    )}
                   </td>
                 </tr>
               ) : (
