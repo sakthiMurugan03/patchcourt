@@ -16,7 +16,7 @@ from patchcourt.demo import demo_pr
 from patchcourt.graph import run_review
 from patchcourt.ingest import parse_pr_url
 from patchcourt.runtime_llm_config import get_runtime_config, update_runtime_config, get_effective_llm_settings
-from patchcourt.llm import reset_llm
+from patchcourt.llm import reset_llm, LLMInvalidKey, LLMQuotaExhausted, LLMServiceBusy, LLMUnreachable
 
 logger = logging.getLogger("patchcourt.api")
 
@@ -30,13 +30,37 @@ def friendly_error(e: Exception) -> tuple[str, str]:
     Returns a clean category and human-readable message.
     Raw error is logged server-side only.
     """
+    # Typed LLM failures first — precise, not string-sniffed.
+    if isinstance(e, LLMQuotaExhausted):
+        return (
+            "llm_quota_exhausted",
+            "Gemini API quota exhausted — the free-tier daily/rate limit was reached. "
+            "Switch to Offline (Mock) mode in Settings, or add a new API key.",
+        )
+    if isinstance(e, LLMInvalidKey):
+        return (
+            "llm_invalid_key",
+            "Invalid API key — check it in Settings.",
+        )
+    if isinstance(e, LLMServiceBusy):
+        return (
+            "llm_service_busy",
+            "Gemini is temporarily overloaded — please retry in a moment.",
+        )
+    if isinstance(e, LLMUnreachable):
+        return (
+            "llm_unreachable",
+            "Couldn't reach the LLM provider — check your connection or switch to Offline mode.",
+        )
+
     error_str = str(e).lower()
     
     # 429 / quota
     if any(k in error_str for k in ["429", "resource_exhausted", "quota"]):
         return (
-            "quota_exhausted",
-            "Gemini quota exhausted — switch to Offline mode in Settings, or add a new API key"
+            "llm_quota_exhausted",
+            "Gemini API quota exhausted — the free-tier daily/rate limit was reached. "
+            "Switch to Offline (Mock) mode in Settings, or add a new API key."
         )
     
     # 503 / busy
@@ -432,10 +456,21 @@ async def test_llm_connection() -> LLMTestResponse:
             
     except Exception as e:
         error_str = str(e).lower()
-        if "401" in error_str or "unauthorized" in error_str or "auth" in error_str:
-            return LLMTestResponse(ok=False, detail="Authentication failed — check API key")
-        if "429" in error_str or "resource_exhausted" in error_str or "quota" in error_str:
-            return LLMTestResponse(ok=False, detail="Quota exhausted (429) — switch to Mock or add new key")
-        if "connection" in error_str or "connect" in error_str:
-            return LLMTestResponse(ok=False, detail=f"Connection failed: {e}")
-        return LLMTestResponse(ok=False, detail=f"Test failed: {e}")
+        logger.warning("LLM connection test failed: %s", e)
+        if any(k in error_str for k in ["401", "unauthorized", "auth", "invalid key"]):
+            return LLMTestResponse(ok=False, detail="Invalid API key — check it in Settings")
+        if any(k in error_str for k in ["429", "resource_exhausted", "quota"]):
+            return LLMTestResponse(
+                ok=False,
+                detail="Gemini API quota exhausted — the free-tier daily/rate limit was reached. "
+                "Switch to Offline (Mock) mode in Settings, or add a new API key.",
+            )
+        if any(k in error_str for k in ["503", "overloaded", "unavailable", "busy"]):
+            return LLMTestResponse(ok=False, detail="Gemini is temporarily overloaded — please retry in a moment")
+        if any(k in error_str for k in ["timeout", "connection", "connect", "dns", "resolve", "refused"]):
+            return LLMTestResponse(
+                ok=False,
+                detail="Couldn't reach the LLM provider — check your connection or switch to Offline mode",
+            )
+        # Unknown error: never surface raw provider output to the UI.
+        return LLMTestResponse(ok=False, detail="Something went wrong while testing the connection")

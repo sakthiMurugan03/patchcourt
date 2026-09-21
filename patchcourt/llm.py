@@ -18,6 +18,22 @@ logger = logging.getLogger("patchcourt.llm")
 _PROVIDERS = ("mock", "openai", "claude", "gemini", "ollama")
 
 
+class LLMQuotaExhausted(Exception):
+    """Provider rejected the request: quota exceeded / 429 / RESOURCE_EXHAUSTED."""
+
+
+class LLMInvalidKey(Exception):
+    """Provider rejected the API key (401 / unauthorized / permission denied)."""
+
+
+class LLMServiceBusy(Exception):
+    """Provider is temporarily overloaded (503)."""
+
+
+class LLMUnreachable(Exception):
+    """Provider could not be reached (timeout / DNS / network failure)."""
+
+
 class _GeminiRateLimiter:
     """Simple token-bucket rate limiter for Gemini free tier (~4 req/min)."""
 
@@ -109,7 +125,12 @@ class LLMClient:
         return await self._generate_with_retry(system, user)
 
     async def _generate_with_retry(self, system: str, user: str, max_retries: int = 5) -> dict[str, Any]:
-        """Generate with exponential backoff on 429."""
+        """Generate with exponential backoff on transient 429s.
+
+        Distinct failures (invalid key, overloaded, unreachable) are raised as
+        typed, structured exceptions so the API can map them to precise
+        user-facing messages. Raw error text is only logged server-side.
+        """
         last_error: Exception | None = None
 
         for attempt in range(max_retries):
@@ -121,20 +142,17 @@ class LLMClient:
                 content = self._normalize_content(resp.content)
                 return self._extract_json(content)
             except Exception as e:
-                last_error = e
-                error_str = str(e).lower()
-
-                # Check for 429 / rate limit
-                if "429" in error_str or "resource_exhausted" in error_str or "rate limit" in error_str:
-                    # Try to extract retry delay from error
+                cls = self._classify_error(e)
+                if cls is LLMQuotaExhausted:
+                    # 429 / rate limit may be transient — back off and retry.
+                    last_error = e
                     retry_delay = self._extract_retry_delay(e)
                     if retry_delay is None:
-                        # Exponential backoff with jitter: 2^attempt * base + jitter
                         base_delay = 2 ** attempt
                         retry_delay = base_delay + random.uniform(0, 1)
 
                     logger.warning(
-                        "Gemini rate limited (attempt %d/%d), waiting %.1fs",
+                        "LLM quota/rate limited (attempt %d/%d), waiting %.1fs",
                         attempt + 1,
                         max_retries,
                         retry_delay,
@@ -142,10 +160,42 @@ class LLMClient:
                     await asyncio.sleep(retry_delay)
                     continue
 
-                # Non-retryable error
+                if cls is LLMInvalidKey:
+                    logger.error("LLM provider rejected API key: %s", e)
+                    raise LLMInvalidKey(str(e)) from e
+                if cls is LLMServiceBusy:
+                    logger.error("LLM provider overloaded: %s", e)
+                    raise LLMServiceBusy(str(e)) from e
+                if cls is LLMUnreachable:
+                    logger.error("LLM provider unreachable: %s", e)
+                    raise LLMUnreachable(str(e)) from e
+
+                # Unknown / non-retryable — propagate the raw exception.
                 raise
 
-        raise RuntimeError(f"LLM generate failed after {max_retries} retries: {last_error}") from last_error
+        raise LLMQuotaExhausted(
+            f"LLM generate failed after {max_retries} retries: {last_error}"
+        ) from last_error
+
+    @staticmethod
+    def _classify_error(err: Exception) -> type[Exception] | None:
+        """Categorize a provider exception into a typed, structured error."""
+        s = str(err).lower()
+        if any(k in s for k in (
+            "401", "unauthorized", "invalid api key", "invalid key",
+            "apikey not valid", "403", "permission denied",
+        )):
+            return LLMInvalidKey
+        if any(k in s for k in ("503", "service unavailable", "overloaded", "temporarily overloaded", "busy")):
+            return LLMServiceBusy
+        if any(k in s for k in ("429", "resource_exhausted", "quota exceeded", "quota")):
+            return LLMQuotaExhausted
+        if any(k in s for k in (
+            "timeout", "timed out", "deadline exceeded", "connection",
+            "connect", "network", "dns", "resolve", "getaddrinfo", "refused",
+        )):
+            return LLMUnreachable
+        return None
 
     @staticmethod
     def _normalize_content(content: Any) -> str:
