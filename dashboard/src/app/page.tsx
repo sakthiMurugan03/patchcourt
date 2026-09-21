@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { Gavel, RefreshCw } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
+import { Gavel, RefreshCw, CheckCircle2, Settings, RotateCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { AuditView } from "@/components/audit-view";
 import { DebateTranscript } from "@/components/debate-transcript";
 import { EvidencePanel } from "@/components/evidence-panel";
@@ -34,6 +36,7 @@ export default function Page() {
   const [localPhase, setLocalPhase] = useState<Phase>(phase);
   const [localError, setLocalError] = useState<string>(error);
   const [localErrorCategory, setLocalErrorCategory] = useState<string>("unknown");
+  const lastRequest = useRef<(() => Promise<Report>) | null>(null);
 
   useEffect(() => {
     setLocalReport(report);
@@ -42,6 +45,7 @@ export default function Page() {
   }, [report, phase, error]);
 
   async function load(fn: () => Promise<Report>) {
+    lastRequest.current = fn;
     setLocalPhase("loading");
     setLocalError("");
     setLocalErrorCategory("unknown");
@@ -71,6 +75,11 @@ export default function Page() {
     clearReview();
   }
 
+  function handleRetry() {
+    if (lastRequest.current) load(lastRequest.current);
+    else setLocalPhase("idle");
+  }
+
   return (
     <LayoutWrapper>
       <div className="flex flex-col gap-6">
@@ -97,7 +106,7 @@ export default function Page() {
             />
           )}
           {localPhase === "loading" && <LoadingState />}
-          {localPhase === "error" && <ErrorState error={localError} category={localErrorCategory} onRetry={() => setLocalPhase("idle")} />}
+          {localPhase === "error" && <ErrorState error={localError} category={localErrorCategory} onRetry={handleRetry} />}
           {localPhase === "done" && localReport && <OverviewContent report={localReport} onNewReview={handleNewReview} />}
         </div>
       </div>
@@ -129,101 +138,56 @@ function LoadingState() {
 
 function ErrorState({ error, category, onRetry }: { error: string; category?: string; onRetry: () => void }) {
   const cat = category || "unknown";
-  
-  const hints: Record<string, { icon: string; title: string; body: React.ReactNode }> = {
-    quota_exhausted: {
-      icon: "⚠",
-      title: "Gemini quota exhausted",
-      body: (
-        <>
-          The free tier allows ~4 requests/min. Switch to{" "}
-          <a href="/settings" className="underline hover:text-amber-300">Offline mode in Settings</a>
-          {", or add a new API key."}
-        </>
-      ),
-    },
-    service_busy: {
-      icon: "⏳",
-      title: "Gemini is busy",
-      body: "Please retry in a moment.",
-    },
-    auth_failed: {
-      icon: "🔐",
-      title: "Invalid API key",
-      body: (
-        <>
-          Check your API key in{" "}
-          <a href="/settings" className="underline hover:text-amber-300">Settings</a>
-          {"."}
-        </>
-      ),
-    },
-    model_not_found: {
-      icon: "🤖",
-      title: "Model not found",
-      body: (
-        <>
-          Check the model name in{" "}
-          <a href="/settings" className="underline hover:text-amber-300">Settings</a>
-          {"."}
-        </>
-      ),
-    },
-    pr_not_found: {
-      icon: "🔍",
-      title: "PR not found",
-      body: "Check the PR URL and try again.",
-    },
-    sonar_offline: {
-      icon: "📊",
-      title: "SonarQube offline",
-      body: "Check SonarQube is running and the URL/token are correct in Settings.",
-    },
-    connection_failed: {
-      icon: "🔌",
-      title: "Connection failed",
-      body: "Check the service is running and network is available.",
-    },
-    timeout: {
-      icon: "⏱",
-      title: "Request timed out",
-      body: "Please retry — the service may be slow right now.",
-    },
-    forbidden: {
-      icon: "🚫",
-      title: "Access denied",
-      body: "Check API key permissions.",
-    },
-    not_found: {
-      icon: "🔍",
-      title: "Not found",
-      body: "The requested resource was not found.",
-    },
-    rate_limited: {
-      icon: "⏳",
-      title: "Rate limited",
-      body: "Please wait and retry.",
-    },
+
+  const META: Record<string, { icon: string; title: string }> = {
+    llm_quota_exhausted: { icon: "⚠", title: "Gemini quota exhausted" },
+    quota_exhausted: { icon: "⚠", title: "Gemini quota exhausted" },
+    llm_invalid_key: { icon: "🔐", title: "Invalid API key" },
+    auth_failed: { icon: "🔐", title: "Invalid API key" },
+    llm_service_busy: { icon: "⏳", title: "Gemini is busy" },
+    service_busy: { icon: "⏳", title: "Gemini is busy" },
+    llm_unreachable: { icon: "🔌", title: "LLM provider unreachable" },
+    connection_failed: { icon: "🔌", title: "Connection failed" },
+    github_unreachable: { icon: "🔌", title: "Cannot reach GitHub" },
+    timeout: { icon: "⏱", title: "Request timed out" },
+    model_not_found: { icon: "🤖", title: "Model not found" },
+    pr_not_found: { icon: "🔍", title: "PR not found" },
+    sonar_offline: { icon: "📊", title: "SonarQube offline" },
+    forbidden: { icon: "🚫", title: "Access denied" },
+    not_found: { icon: "🔍", title: "Not found" },
+    rate_limited: { icon: "⏳", title: "Rate limited" },
   };
 
-  const hint = hints[cat] || {
-    icon: "⚠",
-    title: "Something went wrong",
-    body: "Please try again.",
-  };
+  const meta = META[cat] ?? { icon: "⚠", title: "Something went wrong" };
+  const isQuota = cat === "llm_quota_exhausted" || cat === "quota_exhausted";
 
   return (
     <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
       <p className="flex items-center gap-2">
-        <span className="size-4">{hint.icon}</span>
-        <strong>{hint.title}</strong>
+        <span className="size-4">{meta.icon}</span>
+        <strong>{meta.title}</strong>
       </p>
-      <p className="mt-2 text-xs text-muted-foreground">{hint.body}</p>
-      <p className="mt-3 text-xs text-muted-foreground">
-        <button onClick={onRetry} className="font-medium underline-offset-2 hover:text-destructive">
-          Try again
-        </button>
-      </p>
+      <p className="mt-2 text-xs text-foreground/90">{error}</p>
+      {isQuota ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Link href="/settings">
+            <Button size="sm" className="gap-1.5">
+              <Settings className="size-3.5" />
+              Go to Settings
+            </Button>
+          </Link>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={onRetry}>
+            <RotateCw className="size-3.5" />
+            Retry
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-muted-foreground">
+          <button onClick={onRetry} className="font-medium underline-offset-2 hover:text-destructive">
+            Try again
+          </button>
+        </p>
+      )}
     </div>
   );
 }
@@ -266,6 +230,21 @@ function KPIRow({ report }: { report: Report }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function CleanChartState({ cardTitle }: { cardTitle: string }) {
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle className="text-base">{cardTitle}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex min-h-24 flex-col items-center justify-center py-6 text-center">
+        <CheckCircle2 className="size-6 text-green-400" />
+        <p className="mt-2 text-sm text-foreground">No findings to chart — this PR is clean.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Nothing below the reporting threshold.</p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -326,6 +305,9 @@ function ChartsRow({ report }: { report: Report }) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {severityData.length === 0 ? (
+        <CleanChartState cardTitle="Severity Distribution" />
+      ) : (
       <Card className="w-full">
         <CardHeader>
           <CardTitle className="text-base">Severity Distribution</CardTitle>
@@ -351,7 +333,11 @@ function ChartsRow({ report }: { report: Report }) {
           </ResponsiveContainer>
         </CardContent>
       </Card>
+      )}
 
+      {tierData.length === 0 ? (
+        <CleanChartState cardTitle="Tier Distribution (T1–T5)" />
+      ) : (
       <Card className="w-full">
         <CardHeader>
           <CardTitle className="text-base">Tier Distribution (T1–T5)</CardTitle>
@@ -377,6 +363,7 @@ function ChartsRow({ report }: { report: Report }) {
           </ResponsiveContainer>
         </CardContent>
       </Card>
+      )}
     </div>
   );
 }
