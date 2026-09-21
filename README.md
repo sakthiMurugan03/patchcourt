@@ -1,5 +1,7 @@
 # PatchCourt
 
+[![CI](https://github.com/sakthiMurugan03/patchcourt/actions/workflows/ci.yml/badge.svg)](https://github.com/sakthiMurugan03/patchcourt/actions/workflows/ci.yml)
+
 Multi-agent, **evidence-tiered** AI code-review system for GitHub Pull Requests.
 
 Three specialist LLM agents review a PR **in parallel**. Every claim is tied to a
@@ -300,6 +302,19 @@ patchcourt/
 ├── llm.py       # provider dispatch (mock/openai/claude/gemini/ollama)
 └── config.py    # .env settings + tier weights
 ```
+
+## Continuous Integration
+
+Every push to `main` and every pull request runs the GitHub Actions pipeline
+defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
+| Job | What it runs |
+|-----|--------------|
+| **Backend tests** | Python 3.12 · `pip install -e ".[dev,llm]"` · `pytest -q` |
+| **Frontend build** | Node 22 · `cd dashboard && npm ci` · `npm run build` |
+
+A PR is not mergeable until both jobs pass. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the contributing workflow.
 
 ## Tests
 
