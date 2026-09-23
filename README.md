@@ -1,16 +1,29 @@
 # PatchCourt
 
-Multi-agent, **evidence-tiered** AI code-review system for GitHub Pull Requests.
+> Multi-agent, **evidence-tiered** AI code-review system for GitHub Pull Requests.
+
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-000000?style=flat&logo=nextdotjs&logoColor=white)
+![Celery](https://img.shields.io/badge/Celery-37814A?style=flat&logo=celery&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)
+![Qdrant](https://img.shields.io/badge/Qdrant-VectorStore-DC244C?style=flat)
+![LangGraph](https://img.shields.io/badge/LangGraph-Agents-1C3C3C?style=flat)
+![Docker](https://img.shields.io/badge/Docker-Sandbox-2496ED?style=flat&logo=docker&logoColor=white)
+![SonarQube](https://img.shields.io/badge/SonarQube-Baseline-4E9BCD?style=flat&logo=sonarqubeserver&logoColor=white)
+![Semgrep](https://img.shields.io/badge/Semgrep-Bandit%20%7C%20Gitleaks-1B2A3A?style=flat)
+![Claude](https://img.shields.io/badge/Claude-Supported-D97757?style=flat&logo=anthropic&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-Supported-412991?style=flat&logo=openai&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-Free%20Tier-8E75B2?style=flat&logo=googlegemini&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-Local-000000?style=flat&logo=ollama&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-97CA00?style=flat)
+
+---
 
 Three specialist LLM agents review a PR **in parallel**. Every claim is tied to a
 static-analysis tool finding, repository policy, git precedent, or LLM reasoning —
-each assigned a trust tier (T1–T5). Disagreements go through a **bounded,
-retrieval-gated debate**, and a deterministic judge produces a final score and
-verdict: `MERGE` | `NEEDS_REVIEW` | `BLOCK`.
-
-> **BLOCK never rests on T5 alone.** A hard rule in the judge (enforced in code
-> and unit-tested) downgrades verdicts that cross the block threshold only via
-> LLM-only claims.
+each assigned a trust tier (T1–T5). ...
 
 ```
 GitHub PR ──► ingest ──► RAG (Qdrant) ──► evidence engine ──► parallel agents ──► conflict ─► (debate?) ─► judge ─► report
