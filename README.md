@@ -23,7 +23,13 @@
 
 Three specialist LLM agents review a PR **in parallel**. Every claim is tied to a
 static-analysis tool finding, repository policy, git precedent, or LLM reasoning —
-each assigned a trust tier (T1–T5). ...
+each assigned a trust tier (T1–T5). Disagreements go through a **bounded,
+retrieval-gated debate**, and a deterministic judge produces a final score and
+verdict: `MERGE` | `NEEDS_REVIEW` | `BLOCK`.
+
+> **BLOCK never rests on T5 alone.** A hard rule in the judge (enforced in code
+> and unit-tested) downgrades verdicts that cross the block threshold only via
+> LLM-only claims.
 
 ```
 GitHub PR ──► ingest ──► RAG (Qdrant) ──► evidence engine ──► parallel agents ──► conflict ─► (debate?) ─► judge ─► report
@@ -138,7 +144,7 @@ deterministic stub.
 ```bash
 # run the whole stack instead
 docker compose build sandbox
-docker compose up -d                                  # postgres + redis + qdrant + api
+docker compose up -d                                   # postgres + redis + qdrant + api
 docker compose --profile worker --profile dashboard up # + celery worker + dashboard
 curl -X POST localhost:8000/api/review/demo            # -> BLOCK
 open http://localhost:3000                             # dashboard
@@ -150,20 +156,26 @@ open http://localhost:3000                             # dashboard
 
 ```bash
 python -m patchcourt review https://github.com/octocat/Hello-World/pull/1
-python -m patchcourt review --demo                      # offline demo
+python -m patchcourt review --demo                     # offline demo
 python -m patchcourt review <pr_url> --quiet           # machine-readable
 ```
 
 ### REST API
 
 ```bash
-curl -X POST http://localhost:8000/api/review/demo             # offline demo
+# offline demo
+curl -X POST http://localhost:8000/api/review/demo
+
+# review a real PR
 curl -X POST http://localhost:8000/api/review \
   -H 'Content-Type: application/json' \
   -d '{"pr_url":"https://github.com/octocat/Hello-World/pull/1"}'
 
-curl http://localhost:8000/api/baseline/latest                 # newest saved SonarQube baseline (instant, offline-safe)
-curl -X POST http://localhost:8000/api/baseline \              # fresh comparison — needs SonarQube running
+# newest saved SonarQube baseline (instant, offline-safe)
+curl http://localhost:8000/api/baseline/latest
+
+# fresh comparison — needs SonarQube running
+curl -X POST http://localhost:8000/api/baseline \
   -H 'Content-Type: application/json' \
   -d '{"pr_url":"https://github.com/octocat/Hello-World/pull/1"}'
 ```
@@ -177,8 +189,8 @@ curl -X POST http://localhost:8000/api/webhook/github \
 ```
 
 Returns `202` and hands the review to a Celery worker
-(`package.json`-free — `patchcourt.worker.review_pr`). A `503` is returned when
-`REDIS_URL` is unset. Every review is written to the PostgreSQL audit trail.
+(`patchcourt.worker.review_pr`). A `503` is returned when `REDIS_URL` is unset.
+Every review is written to the PostgreSQL audit trail.
 Repo webhook URL: `http://<host>:8000/api/webhook/github`.
 
 ### Dashboard (Next.js)
