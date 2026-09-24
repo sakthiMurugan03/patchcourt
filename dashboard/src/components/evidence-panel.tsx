@@ -164,11 +164,11 @@ export function EvidencePanel({ claims }: { claims: Claim[] }) {
     return list;
   }, [claimsWithExpanded, minSeverity, maxTier, source, sortBy, sortDir]);
 
-  function SortableHeader({ label, key, currentSort, onSort }: { label: string; key: SortKey; currentSort: SortKey; onSort: (k: SortKey) => void }) {
-    const isActive = currentSort === key;
+  function SortableHeader({ label, sortKey, currentSort, onSort }: { label: string; sortKey: SortKey; currentSort: SortKey; onSort: (k: SortKey) => void }) {
+    const isActive = currentSort === sortKey;
     return (
       <th
-        onClick={() => onSort(key)}
+        onClick={() => onSort(sortKey)}
         className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground select-none"
         style={{ userSelect: "none" }}
       >
@@ -227,10 +227,10 @@ export function EvidencePanel({ claims }: { claims: Claim[] }) {
             <thead>
               <tr className="bg-muted/50 border-b border-border">
                 <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider w-8" />
-                <SortableHeader label="Sev" key="severity" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
-                <SortableHeader label="Tier" key="tier" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
-                <SortableHeader label="Source" key="source" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
-                <SortableHeader label="File:Line" key="file" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
+                <SortableHeader label="Sev" sortKey="severity" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
+                <SortableHeader label="Tier" sortKey="tier" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
+                <SortableHeader label="Source" sortKey="source" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
+                <SortableHeader label="File:Line" sortKey="file" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Finding</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Corroborated</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Weight</th>

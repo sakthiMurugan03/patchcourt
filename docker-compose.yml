@@ -28,7 +28,7 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     ports:
-      - "6333:6333"
+      - "16333:6333"
     volumes:
       - qdrantdata:/qdrant/storage
 
@@ -89,7 +89,7 @@ services:
       context: ./dashboard
     image: patchcourt-dashboard:latest
     ports:
-      - "3000:3000"
+      - "3001:3000"
     depends_on:
       api:
         condition: service_started

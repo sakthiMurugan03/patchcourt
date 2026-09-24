@@ -6,11 +6,21 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import logging
+import os
 import re
+import shutil
+import subprocess
+import tempfile
+import time
 
 import httpx
 
 from patchcourt.config import settings
+
+logger = logging.getLogger("patchcourt.baseline")
+
+_SCANNER_IMAGE = "sonarsource/sonar-scanner-cli:11"
 
 # SonarQube rule severity -> suggested PatchCourt evidence tier.
 # Blocker/Critical are hard static-analysis facts (T1); Major needs
@@ -72,6 +82,115 @@ def fetch_pr_files(pr_url: str) -> list[dict]:
     return files
 
 
+def project_key_for_pr(owner: str, repo: str, num: int) -> str:
+    """Per-PR SonarQube project key, namespaced so an ad-hoc scan of an
+    arbitrary external repo never collides with `settings.sonar_component`
+    (patchcourt's own, continuously-scanned project) or with another PR's
+    scan sitting in the same SonarQube instance."""
+    raw = f"pr-{owner}-{repo}-{num}".lower()
+    return re.sub(r"[^a-z0-9_.:-]", "-", raw)
+
+
+def _scanner_host_url(server_url: str) -> str:
+    """A sibling container (launched via the host's docker.sock from inside
+    the api container, or directly from the host) can never reach SonarQube
+    via 'localhost' — that resolves to the sibling container itself, not
+    whatever's serving SonarQube. host.docker.internal is the one address
+    that reaches the host from either calling context on Docker Desktop."""
+    if "localhost" in server_url or "127.0.0.1" in server_url:
+        return server_url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
+    return server_url
+
+
+def _wait_for_ce(component: str, server_url: str, token: str, timeout: float = 300) -> None:
+    """Block until SonarQube's async report-processing (Compute Engine) has
+    finished for this component — querying issues right after the scanner
+    exits reads a report that hasn't been ingested yet and silently returns 0."""
+    headers = {"Authorization": f"Bearer {token}"}
+    deadline = time.time() + timeout
+    url = f"{server_url.rstrip('/')}/api/ce/component"
+    while time.time() < deadline:
+        try:
+            resp = httpx.get(url, params={"component": component}, headers=headers, timeout=15)
+            if resp.is_success:
+                data = resp.json()
+                if not data.get("queue") and (data.get("current") or {}).get("status") in (
+                    "SUCCESS",
+                    "FAILED",
+                    "CANCELED",
+                ):
+                    return
+        except httpx.HTTPError:
+            pass
+        time.sleep(5)
+    logger.warning("SonarQube processing for %s did not finish within %ss", component, timeout)
+
+
+def run_ondemand_scan(
+    file_contents: dict[str, str],
+    project_key: str,
+    server_url: str | None = None,
+    token: str | None = None,
+) -> None:
+    """Scan just these files (a PR's changed files, not a full checkout) into
+    a fresh per-PR SonarQube project, then block until processing completes.
+
+    Used for PRs against a repo SonarQube has never analyzed as a whole —
+    the only files we have for an arbitrary external repo are the changed
+    ones (already fetched for the agent review), so this is what makes the
+    SonarQube-vs-agent comparison meaningful for anything beyond patchcourt's
+    own PRs. Runs as a Docker sibling container: writes into
+    ``settings.sandbox_workdir`` (already bind-mounted host<->container by
+    docker-compose for exactly this reason — see the sandbox runner) so the
+    path resolves correctly whether this runs inside the api container or
+    directly on the host.
+    """
+    server_url = server_url or settings.sonar_url
+    token = token or settings.sonar_token
+    if not token:
+        raise ValueError("SONAR_TOKEN is required for an on-demand scan")
+    if not file_contents:
+        return
+
+    base_dir = (settings.sandbox_workdir or "").strip() or None
+    if base_dir:
+        os.makedirs(base_dir, exist_ok=True)
+    workdir = tempfile.mkdtemp(dir=base_dir, prefix="patchcourt_sonarscan_")
+    # mkdtemp defaults to 0700 (owner-only) — fine for us (root, in-container),
+    # but the scanner image runs as its own non-root user (uid 1000) and reads
+    # this same path as a sibling container's bind mount, so it needs at least
+    # read+traverse. Unlike the sandbox image (root), sonar-scanner-cli isn't.
+    os.chmod(workdir, 0o755)
+    try:
+        for fname, content in file_contents.items():
+            path = os.path.join(workdir, fname.lstrip("/"))
+            os.makedirs(os.path.dirname(path) or workdir, exist_ok=True)
+            with open(path, "w", encoding="utf-8", errors="replace") as fh:
+                fh.write(content)
+
+        cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{workdir}:/usr/src",
+            "-e", f"SONAR_HOST_URL={_scanner_host_url(server_url)}",
+            "-e", f"SONAR_TOKEN={token}",
+            "-e", (
+                f"SONAR_SCANNER_OPTS=-Dsonar.projectKey={project_key} "
+                f"-Dsonar.projectName={project_key} -Dsonar.sources=."
+            ),
+            _SCANNER_IMAGE,
+        ]
+        logger.info("running on-demand scan for %s", project_key)
+        proc = subprocess.run(cmd, capture_output=True, timeout=600)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"scanner exited {proc.returncode}: {proc.stderr.decode(errors='replace')[-2000:]}"
+            )
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+    _wait_for_ce(project_key, server_url, token)
+
+
 def build_report(
     pr_url: str,
     component: str | None = None,
@@ -107,7 +226,7 @@ def build_report(
 
     rows.sort(key=lambda r: (-r["in_pr"], r["severity"]))
     return {
-        "generated_at": _dt.datetime.utcnow().isoformat() + "Z",
+        "generated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         "pr_url": pr_url,
         "component": component,
         "server_url": server_url,
@@ -183,15 +302,15 @@ def write_report(pr_url: str, report: dict) -> tuple[str, str]:
     from pathlib import Path
 
     owner, repo, num = parse_pr_url(pr_url)
-    ts = _dt.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    ts = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_dir = _reports_dir()
     out_dir.mkdir(exist_ok=True)
     base = out_dir / f"baseline-{owner}-{repo}-{num}-{ts}"
     md_path = f"{base}.md"
     json_path = f"{base}.json"
-    with open(md_path, "w") as fh:
+    with open(md_path, "w", encoding="utf-8") as fh:
         fh.write(markdown(report))
-    with open(json_path, "w") as fh:
+    with open(json_path, "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2)
     return md_path, json_path
 
@@ -203,7 +322,7 @@ def latest_report() -> dict | None:
     if not candidates:
         return None
     newest = max(candidates, key=lambda p: p.stat().st_mtime)
-    with open(newest) as fh:
+    with open(newest, encoding="utf-8") as fh:
         return json.load(fh)
 
 

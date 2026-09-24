@@ -109,7 +109,7 @@ class LLMClient:
             from langchain_google_genai import ChatGoogleGenerativeAI
 
             return ChatGoogleGenerativeAI(
-                model=cfg.model or "gemini-2.5-flash", api_key=key, temperature=0
+                model=cfg.model or "gemini-flash-lite-latest", api_key=key, temperature=0
             )
         raise ValueError(f"Unsupported provider {provider}")
 
@@ -135,12 +135,25 @@ class LLMClient:
 
         for attempt in range(max_retries):
             try:
-                resp = await self._real.ainvoke([
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ])
+                # The provider SDK (e.g. langchain_google_genai) sets no
+                # deadline of its own — a stalled connection would otherwise
+                # await here forever, tying up the request indefinitely with
+                # no error, no retry, and no way for the caller to recover.
+                resp = await asyncio.wait_for(
+                    self._real.ainvoke([
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ]),
+                    timeout=90,
+                )
                 content = self._normalize_content(resp.content)
                 return self._extract_json(content)
+            except TimeoutError as e:
+                last_error = e
+                logger.warning(
+                    "LLM call timed out after 90s (attempt %d/%d)", attempt + 1, max_retries
+                )
+                continue
             except Exception as e:
                 cls = self._classify_error(e)
                 if cls is LLMQuotaExhausted:
@@ -150,6 +163,26 @@ class LLMClient:
                     if retry_delay is None:
                         base_delay = 2 ** attempt
                         retry_delay = base_delay + random.uniform(0, 1)
+
+                    # A DAILY quota breach (as opposed to per-minute) can carry
+                    # a provider-supplied retryDelay of hours until reset —
+                    # sleeping through that would silently stall an
+                    # interactive review with no visible error for the rest
+                    # of the day. Only retry within a budget short enough to
+                    # still be useful for a live request.
+                    max_wait = 30.0
+                    if retry_delay > max_wait:
+                        logger.error(
+                            "LLM quota exhausted, provider wants a %.0fs retry delay "
+                            "(attempt %d/%d) — too long for a live request, failing fast",
+                            retry_delay,
+                            attempt + 1,
+                            max_retries,
+                        )
+                        raise LLMQuotaExhausted(
+                            f"Quota exhausted — provider asked to wait {retry_delay:.0f}s "
+                            "before retrying, likely a daily limit, not just per-minute"
+                        ) from e
 
                     logger.warning(
                         "LLM quota/rate limited (attempt %d/%d), waiting %.1fs",
@@ -173,6 +206,10 @@ class LLMClient:
                 # Unknown / non-retryable — propagate the raw exception.
                 raise
 
+        if isinstance(last_error, TimeoutError):
+            raise LLMUnreachable(
+                f"LLM call kept timing out after {max_retries} attempts (90s each): {last_error}"
+            ) from last_error
         raise LLMQuotaExhausted(
             f"LLM generate failed after {max_retries} retries: {last_error}"
         ) from last_error
@@ -239,12 +276,20 @@ class LLMClient:
     # ------------------------------------------------------------------
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any]:
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        if m:
-            return json.loads(m.group())
-        m2 = re.search(r"\[.*\]", text, re.DOTALL)
-        if m2:
-            return {"claims": json.loads(m2.group())}
+        # A greedy {.*} regex breaks whenever the model adds any trailing
+        # prose/markdown after the JSON (common on less strictly-instructable
+        # models) — it grabs everything up to the LAST brace in the whole
+        # response. raw_decode stops at the end of the first valid JSON
+        # value instead, so trailing text is simply ignored.
+        decoder = json.JSONDecoder()
+        for marker, wrap in (("{", False), ("[", True)):
+            start = text.find(marker)
+            while start != -1:
+                try:
+                    obj, _ = decoder.raw_decode(text, start)
+                    return {"claims": obj} if wrap else obj
+                except json.JSONDecodeError:
+                    start = text.find(marker, start + 1)
         return {"raw": text}
 
     # ------------------------------------------------------------------

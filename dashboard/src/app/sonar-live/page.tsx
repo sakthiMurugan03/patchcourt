@@ -4,9 +4,11 @@ import { SonarLivePanel } from "@/components/sonar-live-panel";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { ViewHeader } from "@/components/view-header";
 import { useReview } from "@/lib/review-context";
+import { projectKeyForPr } from "@/lib/api";
 
 export default function SonarLivePage() {
   const { report, phase } = useReview();
+  const component = report?.pr_url ? projectKeyForPr(report.pr_url) ?? undefined : undefined;
 
   if (phase === "loading") {
     return (
@@ -28,7 +30,7 @@ export default function SonarLivePage() {
           title="SonarQube Live"
           subtitle={report?.pr_url}
         />
-        <SonarLivePanel />
+        <SonarLivePanel component={component} />
       </div>
     </LayoutWrapper>
   );

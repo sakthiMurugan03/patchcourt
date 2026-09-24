@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
+
+logger = logging.getLogger("patchcourt.graph")
 
 from langgraph.graph import END, START, StateGraph
 
@@ -101,17 +104,33 @@ def build_graph() -> StateGraph:
         report = build_report(url, state.get("all_claims", []), state.get("debated_claims", []))
         return {"report": report}
 
+    def _traced(name: str, fn):
+        """Log entry/exit + wall time per node — the pipeline has several
+        stages that call out to slow externals (LLM, sandbox, SonarQube),
+        so without this a stall is invisible: everything upstream looks
+        identical to everything just running normally."""
+
+        async def wrapped(state: dict) -> dict[str, Any]:
+            t0 = time.monotonic()
+            logger.info("node %s: start", name)
+            try:
+                return await fn(state)
+            finally:
+                logger.info("node %s: done in %.1fs", name, time.monotonic() - t0)
+
+        return wrapped
+
     g = StateGraph(GraphState)
-    g.add_node("ingest", ingest)
-    g.add_node("rag", rag_index)
-    g.add_node("evidence", evidence)
-    g.add_node("security", security)
-    g.add_node("quality", quality)
-    g.add_node("pragmatist", pragmatist)
-    g.add_node("merge_all", merge_all)
-    g.add_node("detect", detect)
-    g.add_node("debate", debate)
-    g.add_node("judge", judge)
+    g.add_node("ingest", _traced("ingest", ingest))
+    g.add_node("rag", _traced("rag", rag_index))
+    g.add_node("evidence", _traced("evidence", evidence))
+    g.add_node("security", _traced("security", security))
+    g.add_node("quality", _traced("quality", quality))
+    g.add_node("pragmatist", _traced("pragmatist", pragmatist))
+    g.add_node("merge_all", _traced("merge_all", merge_all))
+    g.add_node("detect", _traced("detect", detect))
+    g.add_node("debate", _traced("debate", debate))
+    g.add_node("judge", _traced("judge", judge))
 
     g.add_edge(START, "ingest")
     g.add_edge("ingest", "rag")

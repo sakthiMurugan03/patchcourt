@@ -159,6 +159,7 @@ def test_baseline_compare_invalid_url(tmp_path, monkeypatch):
 
 
 def test_baseline_compare_full(tmp_path, monkeypatch):
+    from patchcourt.agents.schemas import PRContext
     from patchcourt.config import settings
 
     monkeypatch.setattr(settings, "sonar_token", "t")
@@ -167,6 +168,15 @@ def test_baseline_compare_full(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("patchcourt.baseline.sonarqube_baseline.parse_pr_url", _fake_parse)
     monkeypatch.setattr("patchcourt.baseline.sonarqube_baseline.httpx.get", _FakeSonarIssues())
+    # The scanner is a real `docker run` — not something a unit test should
+    # invoke. build_report's own fake still stands in for what SonarQube
+    # would have reported once the (skipped) scan finished.
+    monkeypatch.setattr("patchcourt.baseline.sonarqube_baseline.run_ondemand_scan", lambda *a, **kw: None)
+
+    async def _fake_fetch_pr(_url):
+        return PRContext(owner="a", repo="b", pr_number=42, file_contents={"app.py": "print(1)"})
+
+    monkeypatch.setattr("patchcourt.ingest.fetch_pr", _fake_fetch_pr)
 
     async def _fake_review(pr_url, **_kw):
         return _fake_report()
@@ -182,7 +192,7 @@ def test_baseline_compare_full(tmp_path, monkeypatch):
         resp = c.post("/api/baseline", json={"pr_url": "https://github.com/a/b/pull/42"})
         assert resp.status_code == 200
         body = resp.json()
-        assert body["component"] == "patchcourt"
+        assert body["component"] == "pr-a-b-42"
         assert body["issues_touching_pr"] == 1
         assert "patchcourt" in body
         pc = body["patchcourt"]

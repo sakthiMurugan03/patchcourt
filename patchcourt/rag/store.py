@@ -139,5 +139,12 @@ def query(query_text: str, n_results: int = 8) -> list[dict[str, Any]]:
 
 
 def clear() -> None:
-    global _client
-    _client = None
+    """Delete every indexed point so the next review starts from a clean
+    slate — points are upserted with UUIDs keyed on filename, not PR
+    identity, so without this, chunks from unrelated past reviews (e.g. a
+    prior file named the same, or simply anything left in a shared
+    collection) stay queryable forever and leak into RAG grounding for
+    PRs that never touched those files."""
+    client = _get_client()
+    if client.collection_exists(COLLECTION):
+        client.delete_collection(COLLECTION)

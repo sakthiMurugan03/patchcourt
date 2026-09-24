@@ -6,7 +6,10 @@ name: patchcourt-sonar
 
 services:
   sonarqube:
-    image: sonarqube:10-community
+    # "community" is the rolling tag that always tracks the current actively-
+    # supported Community build (a pinned numeric tag like 10-community goes
+    # stale and SonarQube itself will nag/refuse to be considered current).
+    image: sonarqube:community
     ports:
       - "9000:9000"
     environment:

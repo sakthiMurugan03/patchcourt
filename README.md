@@ -197,7 +197,7 @@ Set `LLM_PROVIDER` (default `mock`) in `.env`:
 | Mock (deterministic stub) | `mock` | nothing | — |
 | OpenAI | `openai` | `LLM_API_KEY` | `gpt-4o` |
 | Anthropic Claude | `claude` | `LLM_API_KEY` | `claude-3-5-sonnet-latest` |
-| Google Gemini (free tier) | `gemini` | `LLM_API_KEY` (AI Studio) | `gemini-2.5-flash` |
+| Google Gemini (free tier) | `gemini` | `LLM_API_KEY` (AI Studio) | `gemini-flash-latest` |
 | Local Ollama | `ollama` | running Ollama server | `llama3.1` |
 
 `LLM_BASE_URL` overrides the endpoint for `openai` (vLLM / LM Studio) and

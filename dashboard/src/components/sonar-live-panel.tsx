@@ -108,7 +108,7 @@ function SeverityBar({ counts }: { counts: Record<string, number> }) {
   );
 }
 
-export function SonarLivePanel() {
+export function SonarLivePanel({ component }: { component?: string } = {}) {
   const [health, setHealth] = useState<{ available: boolean; error?: string } | null>(null);
   const [qualityGate, setQualityGate] = useState<{
     available: boolean;
@@ -144,6 +144,8 @@ export function SonarLivePanel() {
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+  const componentQS = component ? `&component=${encodeURIComponent(component)}` : "";
+
   const fetchAll = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
@@ -151,9 +153,9 @@ export function SonarLivePanel() {
     try {
       const [healthRes, qgRes, measuresRes, issuesRes] = await Promise.all([
         fetch(`${apiBase}/api/sonar/health`).then(r => r.json()),
-        fetch(`${apiBase}/api/sonar/quality-gate`).then(r => r.json()),
-        fetch(`${apiBase}/api/sonar/measures`).then(r => r.json()),
-        fetch(`${apiBase}/api/sonar/issues?page=${1}&page_size=20`).then(r => r.json()),
+        fetch(`${apiBase}/api/sonar/quality-gate?x=1${componentQS}`).then(r => r.json()),
+        fetch(`${apiBase}/api/sonar/measures?x=1${componentQS}`).then(r => r.json()),
+        fetch(`${apiBase}/api/sonar/issues?page=1&page_size=20${componentQS}`).then(r => r.json()),
       ]);
       setHealth(healthRes);
       setQualityGate(qgRes);
@@ -168,12 +170,12 @@ export function SonarLivePanel() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [componentQS]);
 
   const fetchIssuesPage = useCallback(async (page: number) => {
     setRefreshing(true);
     try {
-      const res = await fetch(`${apiBase}/api/sonar/issues?page=${page}&page_size=20`);
+      const res = await fetch(`${apiBase}/api/sonar/issues?page=${page}&page_size=20${componentQS}`);
       const data = await res.json();
       setIssues(data);
       setCurrentPage(page);
@@ -183,7 +185,7 @@ export function SonarLivePanel() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [componentQS]);
 
   useEffect(() => {
     fetchAll();
@@ -226,6 +228,9 @@ export function SonarLivePanel() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-center gap-2">
             <CardTitle className="text-base">SonarQube Live</CardTitle>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {component ?? "patchcourt (default project)"}
+            </span>
             {health?.available ? (
               <Badge variant="outline" className={cn("text-[10px]", qgPassed ? "text-green-400 border-green-400" : "text-red-400 border-red-400")}>
                 {qgPassed ? "PASSED" : qg?.status === "ERROR" ? "FAILED" : qg?.status === "WARN" ? "WARN" : "UNKNOWN"}
@@ -350,7 +355,9 @@ export function SonarLivePanel() {
 {issueData?.issues?.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                      No issues found
+                      {component
+                        ? <>No issues found — if this PR hasn't been scanned yet, go to the <strong>Baseline</strong> tab and click <strong>Refresh baseline</strong> first.</>
+                        : "No issues found"}
                     </td>
                   </tr>
                 ) : (

@@ -1,6 +1,7 @@
 """FastAPI backend for PatchCourt."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -255,14 +256,13 @@ async def review(req: ReviewRequest) -> dict:
 @app.post("/api/review/demo")
 async def review_demo() -> dict:
     from patchcourt.config import settings
-    from patchcourt.llm import reset_llm
 
     pr_url = "https://github.com/patchcourt/demo/pull/1337"
     was_demo = settings.demo_mode
-    was_mock = settings.use_mock_llm
-    reset_llm()
-    settings.demo_mode = True  # synthetic scanner + mock LLM, fully offline
-    settings.use_mock_llm = True
+    cfg = get_runtime_config()
+    was_provider, was_mock = cfg.provider, cfg.use_mock_llm
+    settings.demo_mode = True  # synthetic scanner, fully offline
+    update_runtime_config(use_mock_llm=True)
     try:
         report = await run_review(pr_url, pr=demo_pr())
     except Exception as e:
@@ -271,7 +271,8 @@ async def review_demo() -> dict:
         raise FriendlyHTTPException(status_code=502, category=cat, detail=msg)
     finally:
         settings.demo_mode = was_demo
-        settings.use_mock_llm = was_mock
+        # use_mock_llm=True forces provider to "mock" as a side effect — restore both.
+        update_runtime_config(provider=was_provider, use_mock_llm=was_mock)
     return report.model_dump()
 
 
@@ -289,18 +290,28 @@ async def baseline_latest() -> dict:
 
 @app.post("/api/baseline")
 async def baseline_compare(req: ReviewRequest) -> dict:
-    """Fresh comparison: SonarQube issues vs the files touched by a PR, plus a
-    PatchCourt reconciliation run. Requires SonarQube + token (explicit action)."""
+    """Fresh comparison: SonarQube issues in this PR's changed files vs a
+    PatchCourt reconciliation run. Scans just the PR's changed files into a
+    per-PR SonarQube project on demand — SonarQube has no way to know an
+    arbitrary external repo's code otherwise, so without this, "touching PR"
+    would always read 0 for anything outside patchcourt's own continuously-
+    scanned project. Requires SonarQube + token (explicit action, several
+    minutes: real scanner + SonarQube's own async processing)."""
     from patchcourt.baseline import build_report, compare_with_review, write_report
+    from patchcourt.baseline.sonarqube_baseline import project_key_for_pr, run_ondemand_scan
+    from patchcourt.ingest import fetch_pr
 
     try:
-        parse_pr_url(req.pr_url)
+        owner, repo, num = parse_pr_url(req.pr_url)
     except ValueError as e:
         cat, msg = friendly_error(e)
         raise FriendlyHTTPException(status_code=400, category=cat, detail=msg)
     try:
-        baseline = build_report(req.pr_url)
-        review = await run_review(req.pr_url)
+        pr = await fetch_pr(req.pr_url)
+        project_key = project_key_for_pr(owner, repo, num)
+        await asyncio.to_thread(run_ondemand_scan, pr.file_contents, project_key)
+        baseline = build_report(req.pr_url, component=project_key)
+        review = await run_review(req.pr_url, pr=pr)
     except Exception as e:
         logger.exception("Baseline comparison failed")
         cat, msg = friendly_error(e)
@@ -336,11 +347,12 @@ async def sonar_health() -> dict:
 
 
 @app.get("/api/sonar/quality-gate")
-async def sonar_quality_gate() -> dict:
-    """Quality gate status for the configured project."""
+async def sonar_quality_gate(component: str | None = None) -> dict:
+    """Quality gate status — the configured project by default, or an
+    on-demand-scanned PR's own project when `component` is given."""
     from patchcourt.sonar_live import get_quality_gate, SonarQubeUnavailable
     try:
-        return await get_quality_gate()
+        return await get_quality_gate(component)
     except SonarQubeUnavailable as e:
         cat, msg = friendly_error(e)
         return {"available": False, "category": cat, "message": msg}
@@ -351,11 +363,12 @@ async def sonar_quality_gate() -> dict:
 
 
 @app.get("/api/sonar/measures")
-async def sonar_measures() -> dict:
-    """Component measures (metrics) for the configured project."""
+async def sonar_measures(component: str | None = None) -> dict:
+    """Component measures (metrics) — the configured project by default, or
+    an on-demand-scanned PR's own project when `component` is given."""
     from patchcourt.sonar_live import get_measures, SonarQubeUnavailable
     try:
-        return await get_measures()
+        return await get_measures(component)
     except SonarQubeUnavailable as e:
         cat, msg = friendly_error(e)
         return {"available": False, "category": cat, "message": msg}
@@ -371,11 +384,15 @@ async def sonar_issues(
     page_size: int = 20,
     severities: str | None = None,
     types: str | None = None,
+    component: str | None = None,
 ) -> dict:
-    """Paginated issue search for the configured project."""
+    """Paginated issue search — the configured project by default, or an
+    on-demand-scanned PR's own project when `component` is given."""
     from patchcourt.sonar_live import get_issues, SonarQubeUnavailable
     try:
-        return await get_issues(page=page, page_size=page_size, severities=severities, types=types)
+        return await get_issues(
+            project_key=component, page=page, page_size=page_size, severities=severities, types=types
+        )
     except SonarQubeUnavailable as e:
         cat, msg = friendly_error(e)
         return {"available": False, "category": cat, "message": msg}

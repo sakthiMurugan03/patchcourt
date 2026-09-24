@@ -2,6 +2,17 @@ import type { BaselineReport, Report, SonarHealth, SonarQualityGate, SonarMeasur
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+/** Mirrors patchcourt.baseline.sonarqube_baseline.project_key_for_pr exactly —
+ * the per-PR SonarQube project the on-demand scan (triggered from the
+ * Baseline tab) creates, so other views can point at the same project
+ * instead of always falling back to the fixed default. */
+export function projectKeyForPr(prUrl: string): string | null {
+  const m = prUrl.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (!m) return null;
+  const raw = `pr-${m[1]}-${m[2]}-${m[3]}`.toLowerCase();
+  return raw.replace(/[^a-z0-9_.:-]/g, "-");
+}
+
 interface FriendlyError {
   category: string;
   message: string;
