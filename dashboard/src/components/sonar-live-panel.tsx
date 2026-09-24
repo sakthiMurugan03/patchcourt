@@ -44,11 +44,18 @@ const SEVERITY_META = {
 } as const;
 
 const RATING_LABELS: Record<string, string> = {
+  // SonarQube returns rating values as "1.0".."5.0"; older/some endpoints as "1".."5".
+  // Accept both spellings so the A-E letter always resolves.
   "1": "A",
   "2": "B",
   "3": "C",
   "4": "D",
   "5": "E",
+  "1.0": "A",
+  "2.0": "B",
+  "3.0": "C",
+  "4.0": "D",
+  "5.0": "E",
 };
 
 function SeverityDot({ severity }: { severity: keyof typeof SEVERITY_META }) {

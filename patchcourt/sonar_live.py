@@ -122,7 +122,33 @@ async def get_measures(project_key: str | None = None) -> dict[str, Any]:
             measures_data[m["metric"]] = m.get("value")
     except SonarQubeUnavailable:
         pass  # Will fill from issues below
-    
+
+    # SonarQube 10.x+ renamed the legacy A-E rating metrics (reliability_rating,
+    # security_rating, sqale_rating) to the "software quality" model. Older keys
+    # return nothing on newer servers. Fetch the new keys in a SEPARATE best-effort
+    # call so a 400 on servers that don't know them can't break the primary call.
+    if (
+        measures_data.get("reliability_rating") is None
+        or measures_data.get("security_rating") is None
+        or measures_data.get("sqale_rating") is None
+    ):
+        try:
+            data_sq = await _sonar_get_measures(
+                "/measures/component",
+                params={
+                    "component": pk,
+                    "metricKeys": (
+                        "software_quality_reliability_rating,"
+                        "software_quality_security_rating,"
+                        "software_quality_maintainability_rating"
+                    ),
+                },
+            )
+            for m in data_sq.get("component", {}).get("measures", []):
+                measures_data[m["metric"]] = m.get("value")
+        except SonarQubeUnavailable:
+            pass  # older server: new keys unknown -> keep legacy/None
+
     # Get issue type counts (source of truth for count tiles)
     issue_counts = await _count_issues_by_type(pk)
     
@@ -136,9 +162,12 @@ async def get_measures(project_key: str | None = None) -> dict[str, Any]:
         "security_hotspots": measures_data.get("security_hotspots", issue_counts.get("SECURITY_HOTSPOT", 0)),
         "coverage": measures_data.get("coverage"),
         "duplicated_lines_density": measures_data.get("duplicated_lines_density"),
-        "reliability_rating": measures_data.get("reliability_rating"),
-        "security_rating": measures_data.get("security_rating"),
-        "sqale_rating": measures_data.get("sqale_rating"),
+        "reliability_rating": measures_data.get("reliability_rating")
+        or measures_data.get("software_quality_reliability_rating"),
+        "security_rating": measures_data.get("security_rating")
+        or measures_data.get("software_quality_security_rating"),
+        "sqale_rating": measures_data.get("sqale_rating")
+        or measures_data.get("software_quality_maintainability_rating"),
     }
     
     # Ensure count fields are int (not None)
