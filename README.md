@@ -1,39 +1,25 @@
 # PatchCourt
 
-Full restart reference
-Docker Desktop's engine itself is still running right now, so you may not need step 1 — but include it if you've restarted your machine or closed Docker Desktop.
+> Multi-agent, **evidence-tiered** AI code-review system for GitHub Pull Requests.
 
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-000000?style=flat&logo=nextdotjs&logoColor=white)
+![Celery](https://img.shields.io/badge/Celery-37814A?style=flat&logo=celery&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)
+![Qdrant](https://img.shields.io/badge/Qdrant-VectorStore-DC244C?style=flat)
+![LangGraph](https://img.shields.io/badge/LangGraph-Agents-1C3C3C?style=flat)
+![Docker](https://img.shields.io/badge/Docker-Sandbox-2496ED?style=flat&logo=docker&logoColor=white)
+![SonarQube](https://img.shields.io/badge/SonarQube-Baseline-4E9BCD?style=flat&logo=sonarqubeserver&logoColor=white)
+![Semgrep](https://img.shields.io/badge/Semgrep-Bandit%20%7C%20Gitleaks-1B2A3A?style=flat)
+![Claude](https://img.shields.io/badge/Claude-Supported-D97757?style=flat&logo=anthropic&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-Supported-412991?style=flat&logo=openai&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-Free%20Tier-8E75B2?style=flat&logo=googlegemini&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-Local-000000?style=flat&logo=ollama&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-97CA00?style=flat)
 
-cd "D:\CIT SEM\mainproj1\patchcourt"
-
-# 1. If Docker Desktop isn't running, launch it and wait ~20-30s for the engine
-Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-# then check readiness:
-docker info
-
-# 2. Start the core stack (api, postgres, redis, qdrant)
-docker compose up -d
-
-# 3. Start SonarQube (optional — only needed for the Baseline/Live SonarQube tabs)
-docker compose -f docker-compose.sonar.yml up -d
-
-# 4. Start the dashboard dev server
-cd dashboard
-npm run dev
-Note: step 4 blocks your terminal (it's a dev server) — run it in its own terminal window/tab, or add -d-style backgrounding if your shell supports it (PowerShell: open a new tab).
-
-Quick health check after starting
-
-curl http://localhost:8000/health          # api
-curl http://localhost:9000/api/system/status  # sonarqube (takes ~20-30s to report UP after start)
-curl http://localhost:3000                 # dashboard
-URLs once everything's up
-Dashboard: http://localhost:3000
-API: http://localhost:8000
-SonarQube: http://localhost:9000
-One thing worth knowing: if you skip step 3, the SonarQube Baseline/Live tabs in the dashboard will just show "offline" — everything else (agent reviews, evidence, sandbox analysis) works fine without it.
-
-Multi-agent, **evidence-tiered** AI code-review system for GitHub Pull Requests.
+---
 
 Three specialist LLM agents review a PR **in parallel**. Every claim is tied to a
 static-analysis tool finding, repository policy, git precedent, or LLM reasoning —
@@ -158,7 +144,7 @@ deterministic stub.
 ```bash
 # run the whole stack instead
 docker compose build sandbox
-docker compose up -d                                  # postgres + redis + qdrant + api
+docker compose up -d                                   # postgres + redis + qdrant + api
 docker compose --profile worker --profile dashboard up # + celery worker + dashboard
 curl -X POST localhost:8000/api/review/demo            # -> BLOCK
 open http://localhost:3000                             # dashboard
@@ -170,20 +156,26 @@ open http://localhost:3000                             # dashboard
 
 ```bash
 python -m patchcourt review https://github.com/octocat/Hello-World/pull/1
-python -m patchcourt review --demo                      # offline demo
+python -m patchcourt review --demo                     # offline demo
 python -m patchcourt review <pr_url> --quiet           # machine-readable
 ```
 
 ### REST API
 
 ```bash
-curl -X POST http://localhost:8000/api/review/demo             # offline demo
+# offline demo
+curl -X POST http://localhost:8000/api/review/demo
+
+# review a real PR
 curl -X POST http://localhost:8000/api/review \
   -H 'Content-Type: application/json' \
   -d '{"pr_url":"https://github.com/octocat/Hello-World/pull/1"}'
 
-curl http://localhost:8000/api/baseline/latest                 # newest saved SonarQube baseline (instant, offline-safe)
-curl -X POST http://localhost:8000/api/baseline \              # fresh comparison — needs SonarQube running
+# newest saved SonarQube baseline (instant, offline-safe)
+curl http://localhost:8000/api/baseline/latest
+
+# fresh comparison — needs SonarQube running
+curl -X POST http://localhost:8000/api/baseline \
   -H 'Content-Type: application/json' \
   -d '{"pr_url":"https://github.com/octocat/Hello-World/pull/1"}'
 ```
@@ -197,8 +189,8 @@ curl -X POST http://localhost:8000/api/webhook/github \
 ```
 
 Returns `202` and hands the review to a Celery worker
-(`package.json`-free — `patchcourt.worker.review_pr`). A `503` is returned when
-`REDIS_URL` is unset. Every review is written to the PostgreSQL audit trail.
+(`patchcourt.worker.review_pr`). A `503` is returned when `REDIS_URL` is unset.
+Every review is written to the PostgreSQL audit trail.
 Repo webhook URL: `http://<host>:8000/api/webhook/github`.
 
 ### Dashboard (Next.js)
