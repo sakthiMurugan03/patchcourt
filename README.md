@@ -1,5 +1,38 @@
 # PatchCourt
 
+Full restart reference
+Docker Desktop's engine itself is still running right now, so you may not need step 1 — but include it if you've restarted your machine or closed Docker Desktop.
+
+
+cd "D:\CIT SEM\mainproj1\patchcourt"
+
+# 1. If Docker Desktop isn't running, launch it and wait ~20-30s for the engine
+Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+# then check readiness:
+docker info
+
+# 2. Start the core stack (api, postgres, redis, qdrant)
+docker compose up -d
+
+# 3. Start SonarQube (optional — only needed for the Baseline/Live SonarQube tabs)
+docker compose -f docker-compose.sonar.yml up -d
+
+# 4. Start the dashboard dev server
+cd dashboard
+npm run dev
+Note: step 4 blocks your terminal (it's a dev server) — run it in its own terminal window/tab, or add -d-style backgrounding if your shell supports it (PowerShell: open a new tab).
+
+Quick health check after starting
+
+curl http://localhost:8000/health          # api
+curl http://localhost:9000/api/system/status  # sonarqube (takes ~20-30s to report UP after start)
+curl http://localhost:3000                 # dashboard
+URLs once everything's up
+Dashboard: http://localhost:3000
+API: http://localhost:8000
+SonarQube: http://localhost:9000
+One thing worth knowing: if you skip step 3, the SonarQube Baseline/Live tabs in the dashboard will just show "offline" — everything else (agent reviews, evidence, sandbox analysis) works fine without it.
+
 Multi-agent, **evidence-tiered** AI code-review system for GitHub Pull Requests.
 
 Three specialist LLM agents review a PR **in parallel**. Every claim is tied to a
