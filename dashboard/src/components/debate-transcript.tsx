@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import type { Debate } from "@/lib/types";
-import { cn } from "cn";
 
 export function DebateTranscript({ debates }: { debates: Debate[] }) {
   if (debates.length === 0) {
