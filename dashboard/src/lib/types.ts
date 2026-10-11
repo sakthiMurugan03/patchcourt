@@ -32,6 +32,8 @@ export type Debate = {
   supporting: string;
   opposing: string;
   rounds: number;
+  code_snippet?: string;
+  verdict_summary?: string;
 };
 
 export type Verdict = "MERGE" | "NEEDS_REVIEW" | "BLOCK";

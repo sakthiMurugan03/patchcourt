@@ -148,6 +148,8 @@ def build_report(
             "supporting": d.supporting,
             "opposing": d.opposing,
             "rounds": d.rounds,
+            "code_snippet": getattr(d, "code_snippet", ""),
+            "verdict_summary": getattr(d, "verdict_summary", ""),
         }
         for d in debates
     ]

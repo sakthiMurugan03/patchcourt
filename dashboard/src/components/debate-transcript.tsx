@@ -38,6 +38,14 @@ export function DebateTranscript({ debates }: { debates: Debate[] }) {
                 {d.rounds} round{d.rounds === 1 ? "" : "s"}
               </Badge>
             </div>
+            {d.verdict_summary && (
+              <div className="rounded-md border border-primary/25 bg-primary/5 p-3">
+                <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-primary uppercase">
+                  Verdict
+                </p>
+                <p className="text-sm text-foreground">{d.verdict_summary}</p>
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-red-500/25 bg-red-500/5 p-3">
                 <p className="mb-1.5 text-[11px] font-semibold tracking-wide text-red-400 uppercase">
@@ -52,6 +60,11 @@ export function DebateTranscript({ debates }: { debates: Debate[] }) {
                 <p className="text-sm text-foreground">{d.opposing}</p>
               </div>
             </div>
+            {d.code_snippet && (
+              <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed">
+                <code>{d.code_snippet}</code>
+              </pre>
+            )}
             {i < debates.length - 1 && <Separator />}
           </div>
         ))}

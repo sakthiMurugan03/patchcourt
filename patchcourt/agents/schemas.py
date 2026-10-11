@@ -30,6 +30,8 @@ class DebatedClaim(BaseModel):
     supporting: str = ""
     opposing: str = ""
     rounds: int = 0
+    code_snippet: str = Field(default="", description="Target file snippet shown to the agents")
+    verdict_summary: str = Field(default="", description="Plain-English developer takeaway")
 
 
 class FileReport(BaseModel):

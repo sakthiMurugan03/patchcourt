@@ -52,8 +52,10 @@ function render(r, seconds) {
       el.className = "debate";
       el.innerHTML =
         `<p><strong>${d.file}</strong> — ${d.issue}</p>` +
+        (d.verdict_summary ? `<p class="verdict-summary">${d.verdict_summary}</p>` : "") +
         `<p>PRO: ${d.supporting}</p>` +
         `<p>CON: ${d.opposing}</p>` +
+        (d.code_snippet ? `<pre class="code-snippet">${d.code_snippet}</pre>` : "") +
         `<p>rounds: ${d.rounds}</p>`;
       $("#debates").appendChild(el);
     });
