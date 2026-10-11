@@ -63,6 +63,7 @@ class FindingAssessment(BaseModel):
     line: int = 0
     rule: str = ""
     message: str = ""
+    severity: int = Field(default=3, ge=1, le=5)
     category: str = "unknown"
     status: str = "UNCERTAIN"
     rationale: str = ""

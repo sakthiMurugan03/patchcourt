@@ -205,6 +205,7 @@ class FindingValidator:
             line=finding.line,
             rule=finding.rule,
             message=finding.message,
+            severity=finding.severity,
             category=category,
             status=status,
             rationale=rationale,

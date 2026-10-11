@@ -248,6 +248,9 @@ async def review(req: ReviewRequest) -> dict:
         logger.exception("Review failed")
         cat, msg = friendly_error(e)
         raise FriendlyHTTPException(status_code=502, category=cat, detail=msg)
+    from patchcourt.comparison import build_review_comparison
+
+    report.baseline_report = build_review_comparison(report)
     return report.model_dump()
 
 
@@ -271,6 +274,9 @@ async def review_demo() -> dict:
         settings.demo_mode = was_demo
         # use_mock_llm=True forces provider to "mock" as a side effect — restore both.
         update_runtime_config(provider=was_provider, use_mock_llm=was_mock)
+    from patchcourt.comparison import build_review_comparison
+
+    report.baseline_report = build_review_comparison(report)
     return report.model_dump()
 
 

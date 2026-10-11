@@ -33,6 +33,7 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
   };
 
   const runReview = async (prUrl: string) => {
+    setReport(null);
     setPhase("loading");
     setError("");
     try {
@@ -48,6 +49,7 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
   };
 
   const runDemo = async () => {
+    setReport(null);
     setPhase("loading");
     setError("");
     try {

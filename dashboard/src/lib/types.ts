@@ -45,6 +45,7 @@ export type Report = {
   files: FileReport[];
   claims: Claim[];
   debate_transcripts: Debate[];
+  baseline_report?: BaselineReport | null;
 };
 
 export const VERDICT_META = {
@@ -108,6 +109,56 @@ export type BaselineComparison = {
   }>;
 };
 
+export type FindingAssessmentView = {
+  status: string;
+  contextual_priority: string;
+  contextual_action: string;
+  category: string;
+  rationale: string;
+  corroborated: boolean;
+  corroborating_tools: string[];
+  policies: Array<{ id: string; title: string; source: string; excerpt: string }>;
+};
+
+export type FindingComparisonRow = {
+  sonar: {
+    issue_key: string;
+    rule: string;
+    severity: string;
+    type: string;
+    message: string;
+    file: string;
+    line: number;
+    status: string;
+  };
+  patchcourt: FindingAssessmentView | null;
+  group: "confirmed" | "contradicted" | "out_of_scope" | "uncertain" | "unmatched";
+  traceable: boolean;
+  scenario?: string;
+};
+
+export type FindingComparison = {
+  verdict: Verdict | string;
+  overall_score: number;
+  counts: {
+    confirmed: number;
+    contradicted: number;
+    out_of_scope: number;
+    uncertain: number;
+    unmatched: number;
+  };
+  total_in_pr: number;
+  adjudicated: number;
+  coverage: number;
+  findings: FindingComparisonRow[];
+};
+
+export type ContextualSummary = {
+  total?: number;
+  blocking?: number;
+  by_status?: Record<string, number>;
+};
+
 export type BaselineReport = {
   generated_at: string;
   pr_url: string;
@@ -121,6 +172,9 @@ export type BaselineReport = {
     verdict: Verdict;
     overall_score: number;
     comparison: BaselineComparison;
+    finding_comparison?: FindingComparison;
+    contextual_summary?: ContextualSummary;
+    assessment_count?: number;
   };
 };
 
