@@ -143,7 +143,11 @@ async def _llm_debate_round(claim: Claim, opponent: Claim, round_no: int) -> tup
         raise
 
 
-def _format_prosecution_mock(claim: Claim, round_no: int) -> str:
+def _assessment_status(assessment) -> str:
+    return assessment.status if assessment is not None else ""
+
+
+def _format_prosecution_mock(claim: Claim, round_no: int, assessment=None) -> str:
     """Format prosecution statement (mock mode)."""
     source = _source_label(claim)
     rule = _rule_snippet(claim)
@@ -151,21 +155,28 @@ def _format_prosecution_mock(claim: Claim, round_no: int) -> str:
     sev_labels = {1: "info", 2: "low", 3: "medium", 4: "high", 5: "critical"}
     sev = sev_labels.get(claim.severity, "medium")
     tier = f"T{claim.tier}"
+    status = _assessment_status(assessment)
 
     if round_no == 1:
-        return (
+        statement = (
             f"{source} {rule} flags {claim.issue} at {loc} — "
             f"risk: {claim.issue.lower()} could lead to security/exploit issues "
             f"(severity {claim.severity}/{sev}, T{claim.tier})."
         )
+        if status:
+            statement += f" Independent adjudication on this location: {status}."
+        return statement
     else:
-        return (
+        statement = (
             f"R{round_no} — {source} still flags {claim.issue} at {loc}; "
             f"no new evidence reduces the risk (T{claim.tier})."
         )
+        if status:
+            statement += f" Adjudication: {status}."
+        return statement
 
 
-def _format_defense_mock(claim: Claim, opponent: Claim, round_no: int) -> str:
+def _format_defense_mock(claim: Claim, opponent: Claim, round_no: int, assessment=None) -> str:
     """Format defense rebuttal (mock mode) — genuinely different from prosecution."""
     opp_source = _source_label(opponent)
     opp_rule = _rule_snippet(opponent)
@@ -180,6 +191,8 @@ def _format_defense_mock(claim: Claim, opponent: Claim, round_no: int) -> str:
         for e in claim.evidence
     )
     has_corroboration = claim.corroborated or any(e.tier <= 2 for e in claim.evidence)
+    status = _assessment_status(assessment)
+    adjudicated = f" The independent validator also marked this location {status}." if status else ""
 
     if round_no == 1:
         if opp_has_strong:
@@ -187,40 +200,40 @@ def _format_defense_mock(claim: Claim, opponent: Claim, round_no: int) -> str:
             return (
                 f"{opponent.issue} at {opp_loc} is corroborated (T{opp_max_tier}). "
                 f"However, the risk is mitigated because the code uses a fixed command pattern, "
-                f"not dynamic user input — injection vector is limited."
+                f"not dynamic user input — injection vector is limited.{adjudicated}"
             )
         elif has_context:
             # Argue mitigation
             return (
                 f"Finding stands but severity overstated: the code uses a fixed/hardcoded value, "
-                f"not user-controlled input, so injection risk is minimal."
+                f"not user-controlled input, so injection risk is minimal.{adjudicated}"
             )
         elif not has_corroboration:
             # Argue lack of corroboration
             return (
                 f"No T1/T2 corroborating evidence from {opponent.source} "
-                f"(max tier T{opp_max_tier}); severity should not escalate beyond T{claim.tier}."
+                f"(max tier T{opp_max_tier}); severity should not escalate beyond T{claim.tier}.{adjudicated}"
             )
         else:
             # Concede
             return (
                 f"Finding stands — recommend fixing before merge. "
-                f"No strong mitigation identified."
+                f"No strong mitigation identified.{adjudicated}"
             )
     else:
         if opp_has_strong:
             return (
                 f"R{round_no} — {opponent.source} still corroborates with T{opp_max_tier} evidence; "
-                f"finding confirmed."
+                f"finding confirmed.{adjudicated}"
             )
         else:
             return (
                 f"R{round_no} — opponent lacks T1/T2 proof (best T{opp_max_tier}); "
-                f"original claim at T{claim.tier} stands without escalation."
+                f"original claim at T{claim.tier} stands without escalation.{adjudicated}"
             )
 
 
-async def _debate_round(claim: Claim, opponent: Claim, round_no: int) -> tuple[str, str]:
+async def _debate_round(claim: Claim, opponent: Claim, round_no: int, assessment=None) -> tuple[str, str]:
     """Run a single debate round, using LLM if available."""
     # Check if we should use real LLM - check runtime config for effective settings
     runtime_cfg = get_runtime_config()
@@ -237,18 +250,28 @@ async def _debate_round(claim: Claim, opponent: Claim, round_no: int) -> tuple[s
             logger.warning("LLM debate failed, falling back to mock: %s", e)
 
     # Mock mode fallback
-    return _format_prosecution_mock(claim, round_no), _format_defense_mock(claim, opponent, round_no)
+    return (
+        _format_prosecution_mock(claim, round_no, assessment),
+        _format_defense_mock(claim, opponent, round_no, assessment),
+    )
 
 
-async def run_debate(conflicts: list[dict], pr) -> list[DebatedClaim]:
+async def run_debate(conflicts: list[dict], pr, assessments: list | None = None) -> list[DebatedClaim]:
     """Run a bounded debate over conflicting claims.
 
     Uses real LLM when LLM_PROVIDER != mock, falls back to improved mock templates.
+    Adjudication assessments (when provided) are surfaced to both sides so the
+    debate is anchored to validated evidence rather than opinions.
     """
+    aindex: dict[tuple, object] = {}
+    for a in assessments or []:
+        aindex[(a.file, int(a.line or 0))] = a
+
     resolved: list[DebatedClaim] = []
     for conflict in conflicts:
         claim: Claim = conflict["claims"][0]
         opponent: Claim = conflict["claims"][-1]
+        assessment = aindex.get((claim.file, int(claim.line or 0)))
         base = DebatedClaim(
             claim=claim,
             supporting="",
@@ -259,7 +282,7 @@ async def run_debate(conflicts: list[dict], pr) -> list[DebatedClaim]:
         for round_no in range(min(settings.debate_max_rounds, 2)):
             base.rounds = round_no + 1
 
-            supporting, opposing = await _debate_round(claim, opponent, round_no)
+            supporting, opposing = await _debate_round(claim, opponent, round_no, assessment)
             base.supporting = supporting
             base.opposing = opposing
 

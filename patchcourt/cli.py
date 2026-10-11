@@ -41,6 +41,31 @@ async def _review(pr_url: str | None, demo: bool, quiet: bool) -> None:
         print(json.dumps(report.model_dump(), indent=2))
 
 
+def _benchmark(quiet: bool = False) -> dict:
+    from patchcourt.benchmark import run_benchmark
+
+    result = run_benchmark()
+    m = result["metrics"]
+    print("\nPATCHCOURT BENCHMARK  —  finding adjudication")
+    print(f"\tCases                : {m['total_cases']}")
+    print(f"\tStatus accuracy      : {m['status_accuracy']:.1%}")
+    print(f"\tPrecision / Recall   : {m['precision']:.2f} / {m['recall']:.2f}")
+    print(f"\tF1                   : {m['f1']:.2f}")
+    print(f"\tFalse-positive rate  : {m['false_positive_rate']:.1%}")
+    print(f"\tIncorrect dismissals : {m['incorrect_dismissals']}")
+    for case in result["cases"]:
+        mark = "OK " if not case["failure"] else "XX "
+        print(f"\t{mark}[{case['expected_status']:>12} -> {case['predicted_status']:>12}] {case['id']}")
+        if case["failure"]:
+            print(f"\t     failure: {case['failure']}")
+    if not quiet:
+        import json
+
+        print("\n--- full benchmark ---")
+        print(json.dumps(result, indent=2))
+    return result
+
+
 def _baseline(pr_url: str, demo: bool = False, quiet: bool = False) -> None:
     from patchcourt.baseline import build_report, write_report
 
@@ -80,11 +105,20 @@ def main(argv: list[str] | None = None) -> None:
     )
     baseline.set_defaults(fn=_baseline, quiet=False)
 
+    benchmark = sub.add_parser(
+        "benchmark", help="Run the labeled finding-adjudication benchmark (offline)"
+    )
+    benchmark.add_argument("--quiet", action="store_true", help="omit the full JSON report")
+    benchmark.set_defaults(fn=_benchmark)
+
     args = p.parse_args(argv)
     if args.command == "review" and not args.demo and not args.pr_url:
         p.error("review requires either a <pr_url> or --demo")
-    demo = getattr(args, "demo", False)
     quiet = getattr(args, "quiet", False)
+    if args.command == "benchmark":
+        args.fn(quiet)
+        return
+    demo = getattr(args, "demo", False)
     fn = args.fn
     if asyncio.iscoroutinefunction(fn):
         asyncio.run(fn(args.pr_url, demo, quiet))

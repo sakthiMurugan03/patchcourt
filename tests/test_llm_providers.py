@@ -110,6 +110,7 @@ def test_ollama_backend_selected():
         _restore(use_mock_llm=False, llm_provider="mock", llm_api_key="", llm_base_url="https://api.openai.com/v1")
 
 
+@pytest.mark.asyncio
 async def test_mock_still_deterministic():
     client = LLMClient()
     out = await client.generate("sys", "no findings here")

@@ -22,10 +22,21 @@ logger = logging.getLogger("patchcourt.baseline")
 
 _SCANNER_IMAGE = "sonarsource/sonar-scanner-cli:11"
 
-# SonarQube rule severity -> suggested PatchCourt evidence tier.
-# Blocker/Critical are hard static-analysis facts (T1); Major needs
-# corroboration (T2); Minor/Info are weak signals (T3/T4).
-_SEVERITY_TIER = {"BLOCKER": 1, "CRITICAL": 1, "MAJOR": 2, "MINOR": 3, "INFO": 4}
+# NOTE on severity vs. evidence tier (deliberate, load-bearing distinction):
+#   * Scanner severity ("BLOCKER"…"INFO") answers "how serious the tool thinks
+#     the reported issue is". It is SonarQube's own judgement.
+#   * Evidence tier (T1–T5) answers "where the evidence supporting a claim came
+#     from". A SonarQube issue is *direct static-analysis evidence*, so its
+#     provenance tier is T1 — regardless of whether SonarQube labelled it a
+#     Blocker or a Minor.
+#   * Adjudication status (SUPPORTED/CONTRADICTED/UNCERTAIN/OUT_OF_SCOPE) answers
+#     "does the available evidence actually support this finding" and is produced
+#     by PatchCourt's finding validator, not by severity.
+#   * Contextual priority (BLOCK/REMEDIATE/…) answers "what should you do next".
+# We therefore never translate severity into a tier; severity is preserved
+# verbatim and every SonarQube issue carries provenance_tier = 1.
+PROVENANCE_TIER = 1
+PROVENANCE = "static-analysis"
 _ISSUE_TYPE = {"VULNERABILITY": "security", "BUG": "correctness", "CODE_SMELL": "maintainability"}
 
 
@@ -213,14 +224,20 @@ def build_report(
             in_pr += 1
         rows.append(
             {
+                "issue_key": issue.get("key", ""),
                 "file": path,
                 "line": issue.get("textRange", {}).get("startLine") if issue.get("textRange") else None,
                 "severity": issue.get("severity", ""),
+                "status": issue.get("status", ""),
                 "type": issue.get("type", ""),
                 "rule": issue.get("rule", ""),
                 "message": (issue.get("message") or "")[:300],
                 "in_pr": touched,
-                "suggested_tier": _SEVERITY_TIER.get(issue.get("severity", ""), 3),
+                # Provenance is constant for scanner findings: the evidence
+                # originates from a static-analysis tool. This is NOT derived
+                # from severity.
+                "provenance": PROVENANCE,
+                "provenance_tier": PROVENANCE_TIER,
             }
         )
 
@@ -230,6 +247,16 @@ def build_report(
         "pr_url": pr_url,
         "component": component,
         "server_url": server_url,
+        "baseline_scope": {
+            "included": "unresolved (open) issues for the component",
+            "excluded": "resolved, closed, or false-positive-marked issues",
+            "query": {"resolved": "false"},
+            "note": (
+                "Baseline reflects SonarQube's current open-issue set at scan time. "
+                "Issues previously resolved or marked false-positive are out of scope "
+                "and are not re-evaluated here."
+            ),
+        },
         "total_open_issues": len(rows),
         "issues_touching_pr": in_pr,
         "summary": {
@@ -258,9 +285,17 @@ def markdown(report: dict) -> str:
         f"| Bugs | {s['bugs']} |",
         f"| Code smells | {s['code_smells']} |",
         "",
-        "> Tier mapping — BLOCKER/CRITICAL ⇒ T1 (hard tool fact), MAJOR ⇒ T2 ",
-        "> (needs corroboration), MINOR ⇒ T3, INFO ⇒ T4. PatchCourt never blocks ",
-        "> on T5 (LLM) evidence alone.",
+        "> **Scope** — includes only *open* SonarQube issues at scan time; resolved, ",
+        "> closed, and false-positive-marked issues are excluded.",
+        "",
+        "> **Severity ≠ evidence tier.** Severity is SonarQube's own judgement of ",
+        "> how serious the issue is. Evidence tier (T1–T5) describes *provenance*: ",
+        "> where the evidence came from. Every scanner finding is direct ",
+        "> static-analysis evidence, so it enters PatchCourt at **T1** — a Minor ",
+        "> finding is still a T1 fact. Whether a finding survives review is decided ",
+        "> separately by PatchCourt's adjudication (SUPPORTED / CONTRADICTED / ",
+        "> UNCERTAIN / OUT_OF_SCOPE) and contextual priority. PatchCourt never ",
+        "> blocks on T5 (LLM) evidence alone.",
         "",
         "## Issues",
         "",
@@ -268,18 +303,19 @@ def markdown(report: dict) -> str:
     if not report["issues"]:
         lines.append("No open issues.")
         return "\n".join(lines)
-    lines.append("| File | Line | Sev | Type | Rule | In PR | Suggested tier |")
-    lines.append("|------|------|-----|------|------|-------|----------------|")
+    lines.append("| File | Line | Sev | Type | Rule | In PR | Provenance |")
+    lines.append("|------|------|-----|------|------|-------|------------|")
     for row in report["issues"]:
         lines.append(
-            "| `{}` | {} | {} | {} | `{}` | {} | T{} |".format(
+            "| `{}` | {} | {} | {} | `{}` | {} | {} (T{}) |".format(
                 row["file"],
                 row["line"] if row["line"] else "—",
                 row["severity"],
                 row["type"],
                 row["rule"],
                 "**YES**" if row["in_pr"] else "",
-                row["suggested_tier"],
+                row.get("provenance", "static-analysis"),
+                row.get("provenance_tier", 1),
             )
         )
     lines.append("")
@@ -392,4 +428,114 @@ def compare_with_review(report: dict, claims: list[dict], verdict: str, overall_
         "confirmed": confirmed,
         "down_tiered": down_tiered,
         "sonar_missed": sonar_missed,
+    }
+
+
+# Adjudication status -> comparison bucket (kept distinct from severity).
+_ADJUDICATION_GROUP = {
+    "SUPPORTED": "confirmed",
+    "CONTRADICTED": "contradicted",
+    "OUT_OF_SCOPE": "out_of_scope",
+    "UNCERTAIN": "uncertain",
+}
+
+
+def _a_get(obj, key: str, default=None):
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _assessment_view(a) -> dict:
+    policies = _a_get(a, "policies", []) or []
+    return {
+        "status": _a_get(a, "status", ""),
+        "contextual_priority": _a_get(a, "contextual_priority", ""),
+        "contextual_action": _a_get(a, "contextual_action", ""),
+        "category": _a_get(a, "category", ""),
+        "rationale": _a_get(a, "rationale", ""),
+        "corroborated": bool(_a_get(a, "corroborated", False)),
+        "corroborating_tools": list(_a_get(a, "corroborating_tools", []) or []),
+        "policies": [
+            {
+                "id": _a_get(p, "id", ""),
+                "title": _a_get(p, "title", ""),
+                "source": _a_get(p, "source", ""),
+                "excerpt": _a_get(p, "excerpt", ""),
+            }
+            for p in policies
+        ],
+    }
+
+
+def compare_findings(
+    report: dict,
+    assessments: list,
+    verdict: str = "",
+    overall_score: float = 0.0,
+) -> dict:
+    """Traceable, finding-by-finding comparison of SonarQube issues against
+    PatchCourt's adjudications for the same PR.
+
+    Every SonarQube issue *touching the PR* is aligned to the PatchCourt
+    ``FindingAssessment`` on the same ``file:line`` (falling back to a
+    ``file + rule`` match), so a reviewer can see the original scanner output
+    beside PatchCourt's status, contextual priority, rationale, corroboration,
+    and matched repository policies — without the two result sets drifting
+    apart. ``severity`` (scanner judgement) and ``status`` (adjudication) stay
+    separate dimensions.
+    """
+    by_loc: dict[tuple, object] = {}
+    by_rule: dict[tuple, object] = {}
+    for a in assessments or []:
+        file = _a_get(a, "file", "")
+        line = int(_a_get(a, "line", 0) or 0)
+        by_loc[(file, line)] = a
+        rule = _a_get(a, "rule", "")
+        if rule:
+            by_rule.setdefault((file, rule), a)
+
+    rows: list[dict] = []
+    counts = {"confirmed": 0, "contradicted": 0, "out_of_scope": 0, "uncertain": 0, "unmatched": 0}
+    for issue in report.get("issues", []):
+        if not issue.get("in_pr"):
+            continue
+        file = issue.get("file", "")
+        line = int(issue.get("line") or 0)
+        match = by_loc.get((file, line)) or by_rule.get((file, issue.get("rule", "")))
+        if match is None:
+            group = "unmatched"
+            view = None
+        else:
+            view = _assessment_view(match)
+            group = _ADJUDICATION_GROUP.get(view["status"], "unmatched")
+        counts[group] = counts.get(group, 0) + 1
+        rows.append(
+            {
+                "sonar": {
+                    "issue_key": issue.get("issue_key", ""),
+                    "rule": issue.get("rule", ""),
+                    "severity": issue.get("severity", ""),
+                    "type": issue.get("type", ""),
+                    "message": issue.get("message", ""),
+                    "file": file,
+                    "line": line,
+                    "status": issue.get("status", ""),
+                },
+                "patchcourt": view,
+                "group": group,
+                "traceable": match is not None,
+            }
+        )
+
+    total = len(rows)
+    adjudicated = sum(counts[g] for g in ("confirmed", "contradicted", "out_of_scope", "uncertain"))
+    return {
+        "verdict": verdict,
+        "overall_score": overall_score,
+        "counts": counts,
+        "total_in_pr": total,
+        "adjudicated": adjudicated,
+        "coverage": (adjudicated / total) if total else 0.0,
+        "findings": rows,
     }

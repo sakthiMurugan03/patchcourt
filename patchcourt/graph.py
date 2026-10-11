@@ -10,10 +10,15 @@ logger = logging.getLogger("patchcourt.graph")
 
 from langgraph.graph import END, START, StateGraph
 
+from patchcourt.adjudication import (
+    FindingValidator,
+    correlate_findings,
+    load_repository_policies,
+)
 from patchcourt.agents import PragmatistAgent, QualityAgent, SecurityAgent
 from patchcourt.agents.schemas import GraphState, PRContext
 from patchcourt.debate import detect_conflicts, run_debate
-from patchcourt.evidence import EvidenceEngine, corroborate_claims
+from patchcourt.evidence import EvidenceEngine, corroborate_claims, normalize_findings
 from patchcourt.ingest import parse_pr_url, fetch_pr
 from patchcourt.judge import build_report
 from patchcourt.rag.store import clear, index_pr, query
@@ -22,7 +27,10 @@ from patchcourt.tools import run_enabled_tools
 _INITIAL: dict[str, object] = {
     "pr": PRContext(),
     "rag_results": [],
+    "raw_findings": [],
     "tool_claims": [],
+    "correlations": [],
+    "finding_assessments": [],
     "security_claims": [],
     "quality_claims": [],
     "pragmatist_claims": [],
@@ -67,8 +75,23 @@ def build_graph() -> StateGraph:
     async def evidence(state: dict) -> dict[str, Any]:
         pr, rag = state["pr"], state["rag_results"]
         engine = EvidenceEngine(runner=_evidence_runner())
-        tool_claims = await engine.analyze(pr.file_contents, rag)
-        return {"tool_claims": tool_claims}
+        raw = await engine.run_findings(pr.file_contents)
+        rag_files = {r.get("metadata", {}).get("file", "") for r in rag}
+        tool_claims = normalize_findings(raw, rag_files=rag_files) if raw else []
+        return {"tool_claims": tool_claims, "raw_findings": raw}
+
+    async def adjudicate(state: dict) -> dict[str, Any]:
+        pr: PRContext = state["pr"]
+        raw = state.get("raw_findings", [])
+        correlations = correlate_findings(raw)
+        policies = load_repository_policies(pr.file_contents)
+        assessments = FindingValidator(policies=policies).validate(
+            raw,
+            file_contents=pr.file_contents,
+            correlations=correlations,
+            patches=pr.patches or None,
+        )
+        return {"correlations": correlations, "finding_assessments": assessments}
 
     async def security(state: dict) -> dict[str, Any]:
         pr, rag, tools = state["pr"], state["rag_results"], state["tool_claims"]
@@ -95,13 +118,23 @@ def build_graph() -> StateGraph:
         return "debate" if state.get("conflicts") else "judge"
 
     async def debate(state: dict) -> dict[str, Any]:
-        debated = await run_debate(state.get("conflicts", []), state.get("pr", PRContext()))
+        debated = await run_debate(
+            state.get("conflicts", []),
+            state.get("pr", PRContext()),
+            assessments=state.get("finding_assessments", []),
+        )
         return {"debated_claims": debated}
 
     async def judge(state: dict) -> dict[str, Any]:
         pr: PRContext = state.get("pr", PRContext())
         url = f"https://github.com/{pr.owner}/{pr.repo}/pull/{pr.pr_number}"
-        report = build_report(url, state.get("all_claims", []), state.get("debated_claims", []))
+        report = build_report(
+            url,
+            state.get("all_claims", []),
+            state.get("debated_claims", []),
+            assessments=state.get("finding_assessments", []),
+            correlations=state.get("correlations", []),
+        )
         return {"report": report}
 
     def _traced(name: str, fn):
@@ -124,6 +157,7 @@ def build_graph() -> StateGraph:
     g.add_node("ingest", _traced("ingest", ingest))
     g.add_node("rag", _traced("rag", rag_index))
     g.add_node("evidence", _traced("evidence", evidence))
+    g.add_node("adjudicate", _traced("adjudicate", adjudicate))
     g.add_node("security", _traced("security", security))
     g.add_node("quality", _traced("quality", quality))
     g.add_node("pragmatist", _traced("pragmatist", pragmatist))
@@ -135,9 +169,10 @@ def build_graph() -> StateGraph:
     g.add_edge(START, "ingest")
     g.add_edge("ingest", "rag")
     g.add_edge("rag", "evidence")
-    g.add_edge("evidence", "security")
-    g.add_edge("evidence", "quality")
-    g.add_edge("evidence", "pragmatist")
+    g.add_edge("evidence", "adjudicate")
+    g.add_edge("adjudicate", "security")
+    g.add_edge("adjudicate", "quality")
+    g.add_edge("adjudicate", "pragmatist")
     g.add_edge("security", "merge_all")
     g.add_edge("quality", "merge_all")
     g.add_edge("pragmatist", "merge_all")

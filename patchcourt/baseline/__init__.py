@@ -1,6 +1,7 @@
 """SonarQube baseline comparison package."""
 from patchcourt.baseline.sonarqube_baseline import (
     build_report,
+    compare_findings,
     compare_with_review,
     fetch_pr_files,
     fetch_sonar_issues,
@@ -12,6 +13,7 @@ from patchcourt.baseline.sonarqube_baseline import (
 
 __all__ = [
     "build_report",
+    "compare_findings",
     "compare_with_review",
     "fetch_pr_files",
     "fetch_sonar_issues",

@@ -74,6 +74,10 @@ class EvidenceEngine:
     def __init__(self, runner=run_enabled_tools) -> None:
         self._runner = runner
 
+    async def run_findings(self, file_contents: dict[str, str]) -> list[Finding]:
+        """Run the enabled tools and return their raw findings (pre-normalization)."""
+        return await self._runner(file_contents)
+
     async def analyze(
         self,
         file_contents: dict[str, str],
@@ -81,7 +85,7 @@ class EvidenceEngine:
         git_precedent: dict | None = None,
     ) -> list[Claim]:
         rag_files = {r.get("metadata", {}).get("file", "") for r in (rag_results or [])}
-        findings = await self._runner(file_contents)
+        findings = await self.run_findings(file_contents)
         if not findings:
             return []
         return normalize_findings(findings, rag_files=rag_files, git_precedent=git_precedent)

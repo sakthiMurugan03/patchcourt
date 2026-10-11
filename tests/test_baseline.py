@@ -71,8 +71,14 @@ def test_build_report(monkeypatch):
     assert report["issues_touching_pr"] == 1
     by_file = {r["file"]: r for r in report["issues"]}
     assert by_file["app/main.py"]["in_pr"] is True
-    assert by_file["app/main.py"]["suggested_tier"] == 1  # CRITICAL → T1
-    assert by_file["lib/helper.py"]["suggested_tier"] == 3  # MINOR → T3
+    assert by_file["app/main.py"]["provenance_tier"] == 1  # direct tool evidence
+    assert by_file["app/main.py"]["provenance"] == "static-analysis"
+    # Severity is preserved verbatim and is NOT translated into a tier.
+    assert by_file["app/main.py"]["severity"] == "CRITICAL"
+    assert by_file["lib/helper.py"]["severity"] == "MINOR"
+    assert by_file["lib/helper.py"]["provenance_tier"] == 1
+    assert "suggested_tier" not in by_file["app/main.py"]
+    assert report["baseline_scope"]["included"] and report["baseline_scope"]["excluded"]
     assert calls["issues"] == 1 and calls["pr"] == 1
 
 

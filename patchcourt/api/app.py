@@ -158,6 +158,8 @@ def _match_error(error_str: str) -> tuple[str, str] | None:
     """Additional specific error pattern matching."""
     if "no baseline report" in error_str or "baseline report saved" in error_str:
         return ("not_found", "No baseline report saved yet — run a baseline first")
+    if "no benchmark report" in error_str or "benchmark report saved" in error_str:
+        return ("not_found", "No benchmark report saved yet — run the benchmark first")
     return None
 
 
@@ -207,14 +209,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PatchCourt", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://localhost:5173",
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -299,7 +295,7 @@ async def baseline_compare(req: ReviewRequest) -> dict:
     would always read 0 for anything outside patchcourt's own continuously-
     scanned project. Requires SonarQube + token (explicit action, several
     minutes: real scanner + SonarQube's own async processing)."""
-    from patchcourt.baseline import build_report, compare_with_review, write_report
+    from patchcourt.baseline import build_report, compare_findings, compare_with_review, write_report
     from patchcourt.baseline.sonarqube_baseline import project_key_for_pr, run_ondemand_scan
     from patchcourt.ingest import fetch_pr
 
@@ -322,10 +318,19 @@ async def baseline_compare(req: ReviewRequest) -> dict:
     comparison = compare_with_review(
         baseline, [c.model_dump() for c in review.claims], review.verdict, review.overall_score
     )
+    finding_comparison = compare_findings(
+        baseline,
+        review.finding_assessments,
+        review.verdict,
+        review.overall_score,
+    )
     baseline["patchcourt"] = {
         "verdict": review.verdict,
         "overall_score": review.overall_score,
         "comparison": comparison,
+        "finding_comparison": finding_comparison,
+        "contextual_summary": review.contextual_summary,
+        "assessment_count": len(review.finding_assessments),
     }
     write_report(req.pr_url, baseline)
     return baseline
@@ -334,6 +339,28 @@ async def baseline_compare(req: ReviewRequest) -> dict:
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/benchmark/latest")
+async def benchmark_latest() -> dict:
+    """Most recently saved adjudication benchmark result (instant — offline)."""
+    from patchcourt.benchmark import latest_benchmark
+
+    result = latest_benchmark()
+    if result is None:
+        cat, msg = friendly_error(ValueError("No benchmark report"))
+        raise FriendlyHTTPException(status_code=404, category=cat, detail=msg)
+    return result
+
+
+@app.post("/api/benchmark/run")
+async def benchmark_run() -> dict:
+    """Run the labeled finding-adjudication benchmark and save the result."""
+    from patchcourt.benchmark import run_benchmark, save_benchmark
+
+    result = run_benchmark()
+    save_benchmark(result)
+    return result
 
 
 @app.get("/api/sonar/health")
@@ -493,3 +520,9 @@ async def test_llm_connection() -> LLMTestResponse:
             )
         # Unknown error: never surface raw provider output to the UI.
         return LLMTestResponse(ok=False, detail="Something went wrong while testing the connection")
+
+@app.get("/api/comparison/demo")
+async def comparison_demo() -> dict:
+    from patchcourt.demo_comparison import run_demo_comparison
+
+    return run_demo_comparison()

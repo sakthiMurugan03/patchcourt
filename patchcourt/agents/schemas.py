@@ -38,6 +38,40 @@ class FileReport(BaseModel):
     score: float = 0.0
 
 
+class PolicyRef(BaseModel):
+    id: str
+    title: str
+    excerpt: str = ""
+    source: str = ""
+
+
+class CorrelationGroup(BaseModel):
+    file: str
+    line: int = 0
+    tools: list[str] = []
+    findings: list[dict] = []
+    relationship: str = "solo"
+    severity_range: list[int] = []
+    disputed: bool = False
+
+
+class FindingAssessment(BaseModel):
+    tool: str = ""
+    file: str = ""
+    line: int = 0
+    rule: str = ""
+    message: str = ""
+    category: str = "unknown"
+    status: str = "UNCERTAIN"
+    rationale: str = ""
+    corroborated: bool = False
+    corroborating_tools: list[str] = []
+    policies: list[PolicyRef] = []
+    contextual_priority: str = ""
+    contextual_action: str = ""
+    evidence: list[Evidence] = []
+
+
 class ReviewReport(BaseModel):
     pr_url: str
     overall_score: float = 0.0
@@ -45,6 +79,10 @@ class ReviewReport(BaseModel):
     files: list[FileReport] = []
     claims: list[Claim] = []
     debate_transcripts: list[dict] = []
+    finding_assessments: list[FindingAssessment] = []
+    correlations: list[CorrelationGroup] = []
+    contextual_summary: dict = {}
+    baseline_report: dict | None = None
 
 
 class PRContext(BaseModel):
@@ -65,7 +103,10 @@ class GraphState(TypedDict, total=False):
 
     pr: PRContext
     rag_results: list[dict]
+    raw_findings: list
     tool_claims: list[Claim]
+    correlations: list[CorrelationGroup]
+    finding_assessments: list[FindingAssessment]
     security_claims: list[Claim]
     quality_claims: list[Claim]
     pragmatist_claims: list[Claim]

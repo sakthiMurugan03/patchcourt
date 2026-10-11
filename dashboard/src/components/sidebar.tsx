@@ -13,6 +13,7 @@ import {
   Gavel,
   Activity,
   Settings,
+  GitCompare,
 } from "lucide-react";
 import { cn } from "cn";
 
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { href: "/debate", label: "Debate", icon: MessageSquare },
   { href: "/baseline", label: "SonarQube Baseline", icon: BarChart2 },
   { href: "/sonar-live", label: "SonarQube Live", icon: Activity },
+  { href: "/comparison", label: "Comparison", icon: GitCompare },
   { href: "/history", label: "History", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;

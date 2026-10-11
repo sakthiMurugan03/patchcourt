@@ -55,9 +55,9 @@ class Settings(BaseModel):
 settings = Settings()
 
 TIER_WEIGHTS: dict[int, float] = {
-    1: 1.0,
-    2: 0.8,
-    3: 0.5,
-    4: 0.4,
-    5: 0.1,
+    1: 1.0,  # T1 — direct static-analysis tool evidence
+    2: 0.8,  # T2 — corroborated tool evidence
+    3: 0.5,  # T3 — repository policy / standards (RAG-grounded)
+    4: 0.4,  # T4 — git precedent / historical pattern (RAG-grounded)
+    5: 0.1,  # T5 — LLM reasoning only (never blocks alone)
 }

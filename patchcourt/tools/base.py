@@ -21,6 +21,8 @@ class Finding:
     message: str
     severity: int = 3
     rule: str = ""
+    category: str = ""
+    recommendation: str = ""
 
 
 class ToolAdapter(Protocol):

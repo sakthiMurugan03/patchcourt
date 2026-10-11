@@ -76,6 +76,7 @@ def _pr(diff="+def login(): pass"):
     )
 
 
+@pytest.mark.asyncio
 async def test_full_pipeline_merge_verdict():
     patch = fake_llm({
         "security": [claim("unused import import os", "app.py", 1, 5, "security", 0.2)],
@@ -90,6 +91,7 @@ async def test_full_pipeline_merge_verdict():
         patch()
 
 
+@pytest.mark.asyncio
 async def test_full_pipeline_block_with_t1_evidence():
     patch = fake_llm({
         "security": [claim("sql injection in login", "app.py", 5, 1, "security")],
@@ -104,6 +106,7 @@ async def test_full_pipeline_block_with_t1_evidence():
         patch()
 
 
+@pytest.mark.asyncio
 async def test_full_pipeline_t5_cannot_block():
     patch = fake_llm({
         "security": [claim("maybe could be bad", "app.py", 5, 5, "security")],
@@ -117,6 +120,7 @@ async def test_full_pipeline_t5_cannot_block():
         patch()
 
 
+@pytest.mark.asyncio
 async def test_debate_path_with_conflict():
     patch = fake_llm({
         "security": [claim("sql injection", "app.py", 5, 1, "security")],

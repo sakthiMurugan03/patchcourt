@@ -1,7 +1,10 @@
 """Judge module — deterministic scoring and verdict."""
 from __future__ import annotations
 
-from patchcourt.agents.schemas import Claim, FileReport, ReviewReport
+from collections import defaultdict
+
+from patchcourt.agents.schemas import Claim, Evidence, FileReport, ReviewReport
+from patchcourt.adjudication.contextual import summarize
 from patchcourt.config import TIER_WEIGHTS
 
 
@@ -84,8 +87,45 @@ def _score(claims: list[Claim]) -> float:
     )
 
 
-def build_report(pr_url: str, claims: list[Claim], debates: list) -> ReviewReport:
+def _apply_judge_assessments(claims: list[Claim], assessments: list) -> list[Claim]:
+    """Deterministic judge input sanitisation: a claim whose only tool backing
+    was adjudicated as CONTRADICTED/OUT_OF_SCOPE loses its corroboration and is
+    capped at T3 — it can no longer push a block on tool-grade evidence."""
+    if not assessments:
+        return claims
+    index: dict[tuple, list] = defaultdict(list)
+    for a in assessments:
+        index[(a.file, int(a.line or 0))].append(a)
+
+    for c in claims:
+        loc = index.get((c.file, int(c.line or 0)))
+        if not loc:
+            continue
+        if not any(a.status == "CONTRADICTED" for a in loc):
+            continue
+        if not all(a.status in ("CONTRADICTED", "OUT_OF_SCOPE") for a in loc):
+            continue
+        c.corroborated = False
+        c.tier = max(c.tier, 3)
+        c.evidence = [
+            Evidence(tier=3, text="scanner finding contradicted by adjudication; claim downgraded"),
+            *c.evidence,
+        ]
+    return claims
+
+
+def build_report(
+    pr_url: str,
+    claims: list[Claim],
+    debates: list,
+    assessments: list | None = None,
+    correlations: list | None = None,
+) -> ReviewReport:
+    claims = _apply_judge_assessments(claims, assessments or [])
     report = ReviewReport(pr_url=pr_url, claims=claims)
+    report.finding_assessments = list(assessments or [])
+    report.correlations = list(correlations or [])
+    report.contextual_summary = summarize(report.finding_assessments) if report.finding_assessments else {}
     per_file: dict[str, list[Claim]] = {}
     for c in claims:
         per_file.setdefault(c.file, []).append(c)

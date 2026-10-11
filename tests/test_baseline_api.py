@@ -120,14 +120,17 @@ def test_baseline_latest_returns_saved(tmp_path, monkeypatch):
         "summary": {"vulnerabilities": 1, "bugs": 0, "code_smells": 2},
         "issues": [
             {
+                "issue_key": "A-B1",
                 "file": "app.py",
                 "line": 10,
                 "severity": "CRITICAL",
+                "status": "OPEN",
                 "type": "VULNERABILITY",
                 "rule": "security:SQL",
                 "message": "SQL injection",
                 "in_pr": True,
-                "suggested_tier": 1,
+                "provenance": "static-analysis",
+                "provenance_tier": 1,
             }
         ],
     }

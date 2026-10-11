@@ -24,7 +24,7 @@ export function TopBar() {
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000"}/health`, {
           method: "GET",
-          signal: AbortSignal.timeout(2000),
+          signal: AbortSignal.timeout(8000),
         });
         setApiStatus(res.ok ? "online" : "offline");
       } catch {
