@@ -372,6 +372,53 @@ function deriveCodeDiff(snippet?: string): { original: string; modified: string 
   return { original: original.join("\n"), modified: modified.join("\n") };
 }
 
+/**
+ * Expandable code preview for a single finding.
+ *
+ * Collapsed (default) it renders the lightweight, dependency-free snippet so a
+ * large PR page stays cheap to paint. Monaco's DiffEditor — and its dynamically
+ * imported chunk — is only mounted once the user expands the diff, keeping the
+ * page lightweight no matter how many findings a PR has.
+ */
+function LazyCodeDiff({
+  snippet,
+  original,
+  modified,
+  language,
+}: {
+  snippet: string;
+  original: string;
+  modified: string;
+  language: string;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="mt-2">
+      {open ? (
+        <CodeDiffViewer
+          className="overflow-hidden rounded border border-zinc-800"
+          original={original}
+          modified={modified}
+          language={language}
+          height="260px"
+        />
+      ) : (
+        <CodeSnippet snippet={snippet} />
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {open ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+        {open ? "Hide code diff" : "View code diff"}
+      </button>
+    </div>
+  );
+}
+
 export default function ComparisonPage() {
   const { report, phase, setReport, setPhase, setError } = useReview();
   const [inputUrl, setInputUrl] = useState("");
@@ -642,14 +689,13 @@ export default function ComparisonPage() {
                     <p className="text-sm mt-0.5">{sonar.message}</p>
                   </div>
 
-                  {/* Code snippet — side-by-side diff of the flagged context window */}
+                  {/* Code snippet — expand to load the Monaco diff on demand */}
                   {pcr?.code_snippet ? (
-                    <CodeDiffViewer
-                      className="mt-2 overflow-hidden rounded border border-zinc-800"
+                    <LazyCodeDiff
+                      snippet={pcr.code_snippet}
                       original={diff.original}
                       modified={diff.modified}
                       language={detectLanguage(sonar.file)}
-                      height="260px"
                     />
                   ) : null}
 
