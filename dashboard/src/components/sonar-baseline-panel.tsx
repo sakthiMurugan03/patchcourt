@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, XCircle, Search, ShieldAlert, ShieldCheck, ShieldQuestion } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, XCircle, Search, ShieldQuestion } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,45 +19,74 @@ const SONAR_SEV_META: Record<SonarSeverity, { color: string; label: string; clas
   INFO:     { color: "var(--severity-info)", label: "INFO", class: "sev-info" },
 };
 
+const SEV_TEXT: Record<string, string> = {
+  BLOCKER: "text-red-400",
+  CRITICAL: "text-red-400",
+  MAJOR: "text-orange-400",
+  MINOR: "text-yellow-400",
+  INFO: "text-blue-400",
+};
+
 function SeverityChip({ severity }: { severity: SonarSeverity }) {
   const meta = SONAR_SEV_META[severity] ?? SONAR_SEV_META.INFO;
   return <Badge variant="outline" className={cn("font-mono text-[10px]", meta.class)} style={{ borderColor: meta.color, color: meta.color }}>{meta.label}</Badge>;
 }
 
-function DiffSection({
-  title,
-  color,
-  count,
-  empty,
-  children,
-}: {
-  title: string;
-  color: string;
-  count: number;
-  empty: string;
-  children?: React.ReactNode;
-}) {
+function CodeSnippet({ snippet }: { snippet: string }) {
+  const lines = snippet.split("\n");
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-        <h4 className="text-sm font-medium text-foreground">{title}</h4>
-        <Badge variant="outline" className="ml-auto font-mono text-[11px]">{count}</Badge>
+    <pre className="mt-2 overflow-x-auto rounded bg-zinc-950 border border-zinc-800 px-0 py-1 text-xs font-mono leading-5 whitespace-pre">
+      {lines.map((line, i) => {
+        const isTarget = line.startsWith("\u2192");
+        return (
+          <div key={i} className={isTarget ? "bg-yellow-500/10 text-yellow-200 px-3" : "text-zinc-400 px-3"}>
+            {line}
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
+function SonarFindingCard({ issue, borderColor }: { issue: any; borderColor: string }) {
+  return (
+    <div className={`border-l-4 rounded-r-lg p-4 bg-card ${borderColor}`}>
+      <div className="flex flex-wrap items-center gap-2 mb-1">
+        <span className={`text-xs font-bold ${SEV_TEXT[issue.severity] ?? "text-zinc-400"}`}>{issue.severity}</span>
+        <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded font-mono">{issue.rule}</span>
+        <span className="text-xs text-muted-foreground">{issue.type}</span>
       </div>
-      {count === 0 ? (
-        <p className="text-xs italic text-muted-foreground">{empty}</p>
-      ) : (
-        <div className="rounded-md border border-border bg-muted/30 divide-y divide-border text-xs">
-          {children}
-        </div>
-      )}
+      <div className="mb-1">
+        <span className="text-xs text-muted-foreground font-mono">{issue.file}:{issue.line}</span>
+        <p className="text-sm mt-0.5">{issue.message}</p>
+      </div>
+      {issue.code_snippet ? <CodeSnippet snippet={issue.code_snippet} /> : null}
     </div>
   );
 }
 
-function RowLabel({ file, line }: { file: string; line: number }) {
+function MissedFindingCard({ m }: { m: any }) {
   return (
-    <code className="break-all text-[11px] text-foreground">{file}:{line}</code>
+    <div className="border-l-4 border-l-primary rounded-r-lg p-4 bg-card">
+      <div className="flex flex-wrap items-center gap-2 mb-1">
+        <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded font-mono border border-primary/40 text-primary">T{m.tier}</span>
+        <span className="text-xs text-muted-foreground">{m.agent}</span>
+      </div>
+      <div className="mb-1">
+        <span className="text-xs text-muted-foreground font-mono">{m.file}:{m.line}</span>
+        <p className="text-sm mt-0.5">{m.issue}</p>
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ title, count, color }: { title: string; count: number; color: string }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+      <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+      <Badge variant="outline" className="ml-auto font-mono text-[11px]">{count}</Badge>
+    </div>
   );
 }
 
@@ -242,39 +271,48 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
             )}
 
             {comp && (
-              <div className="flex flex-col gap-5">
-                <DiffSection title="Confirmed / kept (corroborated)" color="var(--severity-low)" count={confirmedM} empty="No corroborated issues — all SonarQube findings suppressed as unbacked.">
-                  {comp.confirmed.map((issue, i) => (
-                    <div key={`c-${i}`} className="flex items-center gap-3 px-3 py-2">
-                      <RowLabel file={issue.file} line={issue.line} />
-                      <SeverityChip severity={issue.severity} />
-                      <span className="text-muted-foreground font-mono text-[10px]">{issue.rule}</span>
-                      <span className="ml-auto truncate text-[11px] text-muted-foreground">{issue.message}</span>
+              <div className="flex flex-col gap-6">
+                {/* Confirmed */}
+                <div>
+                  <SectionHeader title="Confirmed / kept (corroborated)" count={confirmedM} color="var(--severity-low)" />
+                  {confirmedM === 0 ? (
+                    <p className="text-xs italic text-muted-foreground">No corroborated issues — all SonarQube findings suppressed as unbacked.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {comp.confirmed.map((issue: any, i: number) => (
+                        <SonarFindingCard key={`c-${i}`} issue={issue} borderColor="border-l-green-500" />
+                      ))}
                     </div>
-                  ))}
-                </DiffSection>
+                  )}
+                </div>
 
-                <DiffSection title="Down-tiered as unbacked (likely false positives)" color="var(--severity-medium)" count={suppressed} empty="All SonarQube findings backed.">
-                  {comp.down_tiered.map((issue, i) => (
-                    <div key={`d-${i}`} className="flex items-center gap-3 px-3 py-2">
-                      <RowLabel file={issue.file} line={issue.line} />
-                      <SeverityChip severity={issue.severity} />
-                      <span className="text-muted-foreground font-mono text-[10px]">{issue.rule}</span>
-                      <span className="ml-auto truncate text-[11px] text-muted-foreground">{issue.message}</span>
+                {/* Down-tiered */}
+                <div>
+                  <SectionHeader title="Down-tiered as unbacked (likely false positives)" count={suppressed} color="var(--severity-medium)" />
+                  {suppressed === 0 ? (
+                    <p className="text-xs italic text-muted-foreground">All SonarQube findings backed.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {comp.down_tiered.map((issue: any, i: number) => (
+                        <SonarFindingCard key={`d-${i}`} issue={issue} borderColor="border-l-orange-500" />
+                      ))}
                     </div>
-                  ))}
-                </DiffSection>
+                  )}
+                </div>
 
-                <DiffSection title="Sonar-missed (PatchCourt caught, Sonar didn't)" color="var(--primary)" count={sonarMissed} empty="No PatchCourt-only findings beyond SonarQube.">
-                  {comp.sonar_missed.map((issue, i) => (
-                    <div key={`m-${i}`} className="flex items-center gap-3 px-3 py-2">
-                      <RowLabel file={issue.file} line={issue.line} />
-                      <Badge variant="outline" className="border-primary text-primary text-[10px]">T{issue.tier}</Badge>
-                      <span className="text-muted-foreground text-[10px]">{issue.agent}</span>
-                      <span className="ml-auto truncate text-[11px] text-muted-foreground">{issue.issue}</span>
+                {/* Sonar-missed */}
+                <div>
+                  <SectionHeader title="Sonar-missed (PatchCourt caught, Sonar didn't)" count={sonarMissed} color="var(--primary)" />
+                  {sonarMissed === 0 ? (
+                    <p className="text-xs italic text-muted-foreground">No PatchCourt-only findings beyond SonarQube.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {comp.sonar_missed.map((m: any, i: number) => (
+                        <MissedFindingCard key={`m-${i}`} m={m} />
+                      ))}
                     </div>
-                  ))}
-                </DiffSection>
+                  )}
+                </div>
               </div>
             )}
           </>

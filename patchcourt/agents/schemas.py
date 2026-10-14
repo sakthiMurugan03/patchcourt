@@ -73,6 +73,19 @@ class FindingAssessment(BaseModel):
     contextual_priority: str = ""
     contextual_action: str = ""
     evidence: list[Evidence] = []
+    # FP/FN root cause tagging (from empirical FN/FP study)
+    fp_fn_root_cause: str = Field(default="", description="Root cause category if this is a likely FP/FN")
+    fp_fn_explanation: str = Field(default="", description="Human-readable explanation of the root cause")
+    # Fault-proneness badge (from SonarQube empirical fault study)
+    fault_correlation: str = Field(default="", description="Empirical fault correlation: high/medium/low")
+    # QA-Checker validation result
+    qa_verdict: str = Field(default="", description="QA-Checker verdict: VALID/INCONSISTENT/NEEDS_REWORK")
+    qa_note: str = Field(default="", description="QA-Checker explanation")
+    # Inline code snippet (context window around the flagged line)
+    code_snippet: str = Field(default="", description="Source lines around the flagged line for display")
+    # PR-introduction classification (requires base_file_contents in PRContext)
+    introduced_by_pr: bool = Field(default=False, description="True if this line did not exist in the base branch")
+    pre_existing: bool = Field(default=False, description="True if this exact line existed before the PR")
 
 
 class ReviewReport(BaseModel):
@@ -96,7 +109,8 @@ class PRContext(BaseModel):
     body: str = ""
     diff: str = ""
     changed_files: list[Any] = []
-    file_contents: dict[str, str] = {}
+    file_contents: dict[str, str] = {}       # head (new) version of each changed file
+    base_file_contents: dict[str, str] = {}  # base (old) version — empty for added files
     patches: dict[str, str] = {}
     rag_query: str = ""
 

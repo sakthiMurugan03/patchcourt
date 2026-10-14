@@ -7,14 +7,44 @@ from patchcourt.agents.schemas import Claim, Evidence, FileReport, ReviewReport
 from patchcourt.adjudication.contextual import summarize
 from patchcourt.config import TIER_WEIGHTS
 
+# ---------------------------------------------------------------------------
+# Evidence-backed rule weighting
+# (Some SonarQube Issues have a Significant but Small Effect on Faults)
+# Applied as a small additive nudge to the score, NOT a full multiplier,
+# so it doesn't compound with corroboration_factor and inflate totals.
+# High-fault rules get +15% nudge; cosmetic rules get -15% nudge.
+# ---------------------------------------------------------------------------
+_FAULT_CORR_NUDGE: dict[str, float] = {
+    "high": 1.15,
+    "medium": 1.0,
+    "low": 0.85,
+}
+
+
+def _fault_multiplier(claim: Claim) -> float:
+    """Return a small fault-correlation nudge (±15%) for a claim.
+
+    Only applied to tool-sourced T1/T2 claims to avoid compounding with
+    corroboration_factor on LLM claims.
+    """
+    if claim.source != "tool" or claim.tier > 2:
+        return 1.0
+    issue_lower = claim.issue.lower()
+    if any(k in issue_lower for k in ("sql", "shell", "inject", "secret", "credential", "xss", "deserial", "hardcoded")):
+        return _FAULT_CORR_NUDGE["high"]
+    if any(k in issue_lower for k in ("unused", "visibility", "style", "naming", "format", "complexity")):
+        return _FAULT_CORR_NUDGE["low"]
+    return _FAULT_CORR_NUDGE["medium"]
+
 
 def claim_score(claim: Claim, corroboration: float = 1.0) -> float:
-    """score = severity × tier_weight × corroboration × confidence"""
+    """score = severity × tier_weight × corroboration × confidence × fault_multiplier"""
     return (
         claim.severity
         * TIER_WEIGHTS[claim.tier]
         * corroboration
         * claim.confidence
+        * _fault_multiplier(claim)
     )
 
 

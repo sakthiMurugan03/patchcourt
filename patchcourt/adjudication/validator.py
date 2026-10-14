@@ -11,6 +11,10 @@ For every raw scanner finding, decide whether the code actually supports it:
 * OUT_OF_SCOPE  — the finding is outside the reviewed change.
 
 Statuses are PatchCourt-internal and are not SonarQube classifications.
+
+Also tags each assessment with:
+- fp_fn_root_cause / fp_fn_explanation  (from empirical FN/FP study: 7 root cause categories)
+- fault_correlation                      (from SonarQube empirical fault study: high/medium/low)
 """
 from __future__ import annotations
 
@@ -29,6 +33,97 @@ from patchcourt.adjudication.rules import (
 from patchcourt.tools.base import Finding
 
 
+# ---------------------------------------------------------------------------
+# FP/FN Root Cause Taxonomy
+# (An Empirical Study of False Negatives and Positives of Static Code Analyzers)
+# 7 categories: Flawed Rule Spec, Inconsistent Rule Implementation,
+# Unhandled Language Features, Missing Cases, Mishandling IR,
+# Analysis Module Error, General Programming Error, Miscellaneous
+# ---------------------------------------------------------------------------
+_FP_ROOT_CAUSES: list[tuple[str, str, tuple[str, ...]]] = [
+    (
+        "Flawed Rule Spec",
+        "The rule definition is overly broad or imprecise, matching safe patterns.",
+        ("safe", "false positive", "overly broad", "not applicable"),
+    ),
+    (
+        "Inconsistent Rule Implementation",
+        "The rule implementation diverges from its specification, producing spurious alerts.",
+        ("implementation", "inconsistent", "mismatch", "spec"),
+    ),
+    (
+        "Unhandled Language Features",
+        "The analyzer does not handle a language construct used here (e.g. lambdas, generics).",
+        ("lambda", "generic", "annotation", "reflection", "dynamic", "language feature"),
+    ),
+    (
+        "Missing Cases",
+        "The rule misses a variant of the unsafe pattern (false negative).",
+        ("missing", "not detected", "variant", "indirect", "alias"),
+    ),
+    (
+        "Mishandling Intermediate Representations",
+        "The analyzer's IR transformation loses information, causing incorrect results.",
+        ("ir", "ast", "bytecode", "intermediate", "cfg"),
+    ),
+    (
+        "Analysis Module Error",
+        "A bug in the analysis module (data-flow, taint, call-graph) produces wrong results.",
+        ("data flow", "taint", "call graph", "inter-procedural", "flow"),
+    ),
+    (
+        "General Programming Error",
+        "A general implementation bug in the analyzer causes incorrect output.",
+        ("bug", "crash", "exception", "null pointer", "index"),
+    ),
+]
+
+
+def _fp_fn_root_cause(status: str, rationale: str, rule_id: str, category: str) -> tuple[str, str]:
+    """Infer the most likely FP/FN root cause from the assessment context."""
+    if status not in ("CONTRADICTED", "UNCERTAIN"):
+        return "", ""
+    text = f"{rationale} {rule_id} {category}".lower()
+    for name, explanation, keywords in _FP_ROOT_CAUSES:
+        if any(k in text for k in keywords):
+            return name, explanation
+    # Default for CONTRADICTED with no pattern match
+    if status == "CONTRADICTED":
+        return "Flawed Rule Spec", "Rule matched a safe pattern; likely overly broad specification."
+    return "Missing Cases", "Pattern not reproduced; rule may miss this variant."
+
+
+# ---------------------------------------------------------------------------
+# Fault-Proneness Correlation
+# (Some SonarQube Issues have a Significant but Small Effect on Faults)
+# Rules empirically correlated with real faults get "high"; cosmetic rules get "low".
+# ---------------------------------------------------------------------------
+_HIGH_FAULT_RULES: frozenset[str] = frozenset({
+    # Security — null dereference, resource leak, injection, hardcoded secrets
+    "python:s2077", "python:s6042", "python:s2068", "python:s2076",
+    "java:s2077", "java:s2068", "java:s2076",
+    "b608", "b602", "b605", "b301", "b506",
+    "sql_concat", "shell_true", "hardcoded_secret", "unsafe_deserial",
+    # Null / resource
+    "java:s2259", "java:s2095", "python:s1481",
+})
+_MEDIUM_FAULT_RULES: frozenset[str] = frozenset({
+    "java:s1144", "java:s1172", "python:s1172",
+    "complexity", "java:s3776", "python:s3776",
+    "b105", "b106", "b107",
+})
+
+
+def _fault_correlation(rule: str, category: str) -> str:
+    """Return empirical fault-correlation level for a rule."""
+    r = (rule or "").lower()
+    if r in _HIGH_FAULT_RULES or category == "security":
+        return "high"
+    if r in _MEDIUM_FAULT_RULES:
+        return "medium"
+    return "low"
+
+
 def _search(patterns: tuple[str, ...], text: str) -> bool:
     if not text:
         return False
@@ -42,6 +137,21 @@ def _line_text(content: str, line: int) -> str:
     if line > len(lines):
         return ""
     return lines[line - 1]
+
+
+def _code_snippet(content: str, line: int, context: int = 2) -> str:
+    """Return a numbered context window of `context` lines either side of `line`."""
+    if not content or line < 1:
+        return ""
+    lines = content.splitlines()
+    start = max(0, line - 1 - context)
+    end = min(len(lines), line + context)
+    width = len(str(end + 1))
+    parts = []
+    for i, src in enumerate(lines[start:end], start=start + 1):
+        marker = "→" if i == line else " "
+        parts.append(f"{marker} {str(i).rjust(width)} | {src}")
+    return "\n".join(parts)
 
 
 def added_line_numbers(patch: str) -> set[int]:
@@ -82,6 +192,54 @@ def touched_lines(patches: dict[str, str] | None) -> dict[str, set[int]]:
     return {f: added_line_numbers(p) for f, p in (patches or {}).items()}
 
 
+def _classify_finding(
+    file: str,
+    line: int,
+    head_contents: dict[str, str],
+    base_contents: dict[str, str],
+    touched: dict[str, set[int]],
+) -> tuple[bool, bool]:
+    """Return (introduced_by_pr, pre_existing) for a finding.
+
+    introduced_by_pr — the flagged line is new: it appears in head but the
+        base version of the file either doesn't exist (added file) or doesn't
+        contain that exact line at that position.
+    pre_existing — the flagged line existed verbatim in the base version,
+        meaning the PR did not introduce it.
+
+    Both can be False when the base file is unavailable (no token, binary,
+    or the file was renamed in a way we couldn't resolve).
+    """
+    head_text = _line_text(head_contents.get(file, ""), line)
+    if not head_text:
+        return False, False
+
+    base_content = base_contents.get(file, "")
+    if not base_content:
+        # File is new (added) or base unavailable — treat as introduced.
+        return True, False
+
+    base_lines = base_content.splitlines()
+    # Check if the exact line text exists anywhere in the base file.
+    # We use exact-text membership rather than line-number comparison because
+    # surrounding insertions shift line numbers without changing the content.
+    head_stripped = head_text.strip()
+    base_has_line = any(bl.strip() == head_stripped for bl in base_lines)
+
+    if not base_has_line:
+        # Line content is new — introduced by this PR.
+        return True, False
+
+    # Line existed in base. Check if it was touched (moved/modified) by the PR.
+    in_touched = line in touched.get(file, set())
+    if in_touched:
+        # The diff touched this line number but the content is the same —
+        # context line that was shifted; treat as pre-existing.
+        return False, True
+
+    return False, True
+
+
 def _text(finding: Finding) -> str:
     return " ".join([finding.rule or "", finding.message or "", finding.recommendation or ""])
 
@@ -115,16 +273,26 @@ class FindingValidator:
         file_contents: dict[str, str] | None = None,
         correlations: list | None = None,
         patches: dict[str, str] | None = None,
+        base_file_contents: dict[str, str] | None = None,
     ) -> list[FindingAssessment]:
         file_contents = file_contents or {}
+        base_file_contents = base_file_contents or {}
         groups = correlation_index(correlations or [])
         touched = touched_lines(patches) if patches else {}
-        return [self._assess(f, file_contents, groups, touched) for f in findings]
+        return [
+            self._assess(f, file_contents, groups, touched, base_file_contents)
+            for f in findings
+        ]
 
-    def _assess(self, finding: Finding, file_contents, groups, touched) -> FindingAssessment:
+    def _assess(self, finding: Finding, file_contents, groups, touched, base_file_contents=None) -> FindingAssessment:
         rule = rule_for(finding)
         category = category_for(finding, rule)
         line_text = _line_text(file_contents.get(finding.file, ""), finding.line)
+        snippet = _code_snippet(file_contents.get(finding.file, ""), finding.line)
+        introduced, pre_existing = _classify_finding(
+            finding.file, finding.line,
+            file_contents, base_file_contents or {}, touched,
+        )
         key = (finding.file, int(finding.line or 0))
         group = groups.get(key)
         corro = corroborating_tools(group, finding.tool)
@@ -165,7 +333,15 @@ class FindingValidator:
             status = "CONTRADICTED"
             rationale = "scanner match could not be reproduced on the flagged line."
 
-        pr_touched = finding.line in touched.get(finding.file, set()) if touched else True
+        # A pre-existing finding on an untouched line is lower priority than
+        # one the PR actually introduced. Use introduced_by_pr when available,
+        # fall back to the patch-based touched check.
+        if introduced:
+            pr_touched = True
+        elif pre_existing:
+            pr_touched = False
+        else:
+            pr_touched = finding.line in touched.get(finding.file, set()) if touched else True
         priority, action = assess_context(
             status=status,
             category=category,
@@ -199,6 +375,11 @@ class FindingValidator:
         for ref in refs:
             evidence.append(Evidence(tier=3, text=f"repo policy {ref.id}: {ref.title}"))
 
+        fp_fn_cause, fp_fn_expl = _fp_fn_root_cause(
+            status, rationale, finding.rule or "", category
+        )
+        fault_corr = _fault_correlation(finding.rule or "", category)
+
         return FindingAssessment(
             tool=finding.tool,
             file=finding.file,
@@ -215,6 +396,12 @@ class FindingValidator:
             contextual_priority=priority,
             contextual_action=action,
             evidence=evidence,
+            fp_fn_root_cause=fp_fn_cause,
+            fp_fn_explanation=fp_fn_expl,
+            fault_correlation=fault_corr,
+            code_snippet=snippet,
+            introduced_by_pr=introduced,
+            pre_existing=pre_existing,
         )
 
     def _assess_maintainability(self, finding: Finding, refs: list) -> tuple[str, str]:
@@ -242,7 +429,12 @@ def validate_findings(
     correlations: list | None = None,
     patches: dict[str, str] | None = None,
     policies: list[Policy] | None = None,
+    base_file_contents: dict[str, str] | None = None,
 ) -> list[FindingAssessment]:
     return FindingValidator(policies=policies).validate(
-        findings, file_contents=file_contents, correlations=correlations, patches=patches
+        findings,
+        file_contents=file_contents,
+        correlations=correlations,
+        patches=patches,
+        base_file_contents=base_file_contents,
     )

@@ -105,12 +105,15 @@ def project_key_for_pr(owner: str, repo: str, num: int) -> str:
 def _scanner_host_url(server_url: str) -> str:
     """A sibling container (launched via the host's docker.sock from inside
     the api container, or directly from the host) can never reach SonarQube
-    via 'localhost' — that resolves to the sibling container itself, not
-    whatever's serving SonarQube. host.docker.internal is the one address
-    that reaches the host from either calling context on Docker Desktop."""
-    if "localhost" in server_url or "127.0.0.1" in server_url:
-        return server_url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
-    return server_url
+    via 'localhost' or an internal container hostname — those resolve to the
+    sibling container itself or are unknown. host.docker.internal is the one
+    address that reaches the host from either calling context on Docker Desktop."""
+    return (
+        server_url
+        .replace("localhost", "host.docker.internal")
+        .replace("127.0.0.1", "host.docker.internal")
+        .replace("patchcourt-sonar-sonarqube-1", "host.docker.internal")
+    )
 
 
 def _wait_for_ce(component: str, server_url: str, token: str, timeout: float = 300) -> None:
@@ -465,6 +468,19 @@ def _assessment_view(a) -> dict:
             }
             for p in policies
         ],
+        # FP/FN root cause tagging
+        "fp_fn_root_cause": _a_get(a, "fp_fn_root_cause", ""),
+        "fp_fn_explanation": _a_get(a, "fp_fn_explanation", ""),
+        # Fault-proneness badge
+        "fault_correlation": _a_get(a, "fault_correlation", ""),
+        # QA-Checker result
+        "qa_verdict": _a_get(a, "qa_verdict", ""),
+        "qa_note": _a_get(a, "qa_note", ""),
+        # Inline code snippet
+        "code_snippet": _a_get(a, "code_snippet", ""),
+        # PR-introduction classification
+        "introduced_by_pr": bool(_a_get(a, "introduced_by_pr", False)),
+        "pre_existing": bool(_a_get(a, "pre_existing", False)),
     }
 
 

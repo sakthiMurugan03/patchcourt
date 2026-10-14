@@ -45,6 +45,26 @@ export type Report = {
   files: FileReport[];
   claims: Claim[];
   debate_transcripts: Debate[];
+  finding_assessments?: Array<{
+    tool: string;
+    file: string;
+    line: number;
+    rule: string;
+    message: string;
+    severity: number;
+    category: string;
+    status: string;
+    rationale: string;
+    corroborated: boolean;
+    corroborating_tools: string[];
+    contextual_priority: string;
+    contextual_action: string;
+    fp_fn_root_cause?: string;
+    fp_fn_explanation?: string;
+    fault_correlation?: string;
+    qa_verdict?: string;
+    qa_note?: string;
+  }>;
   baseline_report?: BaselineReport | null;
 };
 
@@ -118,6 +138,19 @@ export type FindingAssessmentView = {
   corroborated: boolean;
   corroborating_tools: string[];
   policies: Array<{ id: string; title: string; source: string; excerpt: string }>;
+  // FP/FN root cause tagging (empirical FN/FP study)
+  fp_fn_root_cause?: string;
+  fp_fn_explanation?: string;
+  // Fault-proneness badge (SonarQube empirical fault study)
+  fault_correlation?: "high" | "medium" | "low" | string;
+  // QA-Checker result (CodeAgent-inspired)
+  qa_verdict?: "VALID" | "INCONSISTENT" | "NEEDS_REWORK" | string;
+  qa_note?: string;
+  // Inline code snippet around the flagged line
+  code_snippet?: string;
+  // PR-introduction classification
+  introduced_by_pr?: boolean;
+  pre_existing?: boolean;
 };
 
 export type FindingComparisonRow = {

@@ -60,6 +60,10 @@ export function runDemo(): Promise<Report> {
   return request<Report>("POST", "/api/review/demo");
 }
 
+export function runComparisonDemo(): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("GET", "/api/comparison/demo");
+}
+
 export async function getBaselineLatest(): Promise<BaselineReport | null> {
   const res = await fetch(`${API_BASE}/api/baseline/latest`);
   if (res.status === 404) return null;

@@ -530,5 +530,91 @@ async def test_llm_connection() -> LLMTestResponse:
 @app.get("/api/comparison/demo")
 async def comparison_demo() -> dict:
     from patchcourt.demo_comparison import run_demo_comparison
-
     return run_demo_comparison()
+
+
+@app.post("/api/baseline/diff")
+async def baseline_diff(req: ReviewRequest) -> dict:
+    """PR diff-only scan: only analyse lines changed in the PR (Bugdar-inspired).
+
+    Faster than a full scan — only the changed files and changed lines are
+    adjudicated. Useful for large repos where a full scan takes too long.
+    Requires SonarQube + token.
+    """
+    from patchcourt.baseline import build_report, compare_findings, compare_with_review, write_report
+    from patchcourt.baseline.sonarqube_baseline import project_key_for_pr, run_ondemand_scan
+    from patchcourt.ingest import fetch_pr
+
+    try:
+        owner, repo, num = parse_pr_url(req.pr_url)
+    except ValueError as e:
+        cat, msg = friendly_error(e)
+        raise FriendlyHTTPException(status_code=400, category=cat, detail=msg)
+    try:
+        pr = await fetch_pr(req.pr_url)
+        # Diff-only: only scan files that were actually changed
+        changed_files = {f["filename"] for f in (pr.changed_files or []) if f.get("filename")}
+        diff_contents = {
+            k: v for k, v in pr.file_contents.items() if k in changed_files
+        } if changed_files else pr.file_contents
+        project_key = project_key_for_pr(owner, repo, num) + "-diff"
+        await asyncio.to_thread(run_ondemand_scan, diff_contents, project_key)
+        baseline = build_report(req.pr_url, component=project_key)
+        # Only adjudicate changed lines (diff-only mode)
+        from patchcourt.adjudication import FindingValidator, correlate_findings, load_repository_policies
+        from patchcourt.tools.base import Finding
+        raw_findings = [
+            Finding(
+                tool="sonarqube",
+                file=issue["file"],
+                line=issue["line"] or 0,
+                severity=5 if issue["severity"] in ("BLOCKER", "CRITICAL") else
+                         4 if issue["severity"] == "MAJOR" else
+                         3 if issue["severity"] == "MINOR" else 2,
+                message=issue["message"],
+                rule=issue["rule"],
+                category="security" if issue["type"] == "VULNERABILITY" else
+                         "correctness" if issue["type"] == "BUG" else "maintainability",
+            )
+            for issue in baseline.get("issues", [])
+            if issue.get("in_pr")  # diff-only: only PR-touching issues
+        ]
+        correlations = correlate_findings(raw_findings)
+        policies = load_repository_policies(pr.file_contents)
+        assessments = FindingValidator(policies=policies).validate(
+            raw_findings,
+            file_contents=diff_contents,
+            correlations=correlations,
+            patches=pr.patches or None,
+        )
+        # Taint inference on diff-only contents
+        try:
+            from patchcourt.taint import infer_missed_findings
+            taint = await infer_missed_findings(diff_contents, assessments)
+            assessments = assessments + taint
+        except Exception:
+            logger.debug("taint inference skipped in diff mode", exc_info=True)
+    except Exception as e:
+        logger.exception("Baseline diff comparison failed")
+        cat, msg = friendly_error(e)
+        raise FriendlyHTTPException(status_code=502, category=cat, detail=msg)
+
+    from patchcourt.judge.scoring import build_report as build_review_report
+    review_report = build_review_report(req.pr_url, [], [], assessments=assessments, correlations=correlations)
+    finding_comparison = compare_findings(
+        baseline, assessments, review_report.verdict, review_report.overall_score
+    )
+    baseline["patchcourt"] = {
+        "verdict": review_report.verdict,
+        "overall_score": review_report.overall_score,
+        "comparison": compare_with_review(
+            baseline, [c.model_dump() for c in review_report.claims],
+            review_report.verdict, review_report.overall_score,
+        ),
+        "finding_comparison": finding_comparison,
+        "contextual_summary": review_report.contextual_summary,
+        "assessment_count": len(assessments),
+        "diff_only": True,
+    }
+    write_report(req.pr_url, baseline)
+    return baseline

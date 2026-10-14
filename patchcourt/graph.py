@@ -90,7 +90,15 @@ def build_graph() -> StateGraph:
             file_contents=pr.file_contents,
             correlations=correlations,
             patches=pr.patches or None,
+            base_file_contents=pr.base_file_contents or None,
         )
+        # Taint inference: find flows the static analyzers missed (IRIS-inspired)
+        try:
+            from patchcourt.taint import infer_missed_findings
+            taint_findings = await infer_missed_findings(pr.file_contents, assessments)
+            assessments = assessments + taint_findings
+        except Exception:
+            logger.debug("taint inference skipped", exc_info=True)
         return {"correlations": correlations, "finding_assessments": assessments}
 
     async def security(state: dict) -> dict[str, Any]:
@@ -123,6 +131,15 @@ def build_graph() -> StateGraph:
             state.get("pr", PRContext()),
             assessments=state.get("finding_assessments", []),
         )
+        # QA-Checker: validate debate conclusions and assessment consistency
+        try:
+            from patchcourt.qa_checker import run_qa_checks
+            debated, assessments = run_qa_checks(
+                debated, state.get("finding_assessments", [])
+            )
+            return {"debated_claims": debated, "finding_assessments": assessments}
+        except Exception:
+            logger.debug("QA-Checker skipped", exc_info=True)
         return {"debated_claims": debated}
 
     async def judge(state: dict) -> dict[str, Any]:
