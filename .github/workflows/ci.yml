@@ -13,10 +13,10 @@ jobs:
     name: backend-test
     runs-on: ubuntu-latest
     env:
-      # Dummy values so settings/tests load cleanly on headless runners where
-      # no Redis or Postgres service is available.
-      REDIS_HOST: localhost
-      POSTGRES_DB: test
+      # Point settings at local, unused services so imports/tests load cleanly
+      # on headless runners without a live Redis or Postgres instance.
+      REDIS_URL: redis://localhost:6379/0
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchcourt_test
     steps:
       - uses: actions/checkout@v4
 
