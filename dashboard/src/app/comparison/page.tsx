@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { ViewHeader } from "@/components/view-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useReview } from "@/lib/review-context";
 import { submitReview, runComparisonDemo } from "@/lib/api";
-import type { BaselineComparison, FindingComparison } from "@/lib/types";
+import type { BaselineComparison, FindingComparison, Report } from "@/lib/types";
 
 const VERDICT_COLOR: Record<string, string> = {
   BLOCK: "text-red-400",
@@ -62,6 +63,239 @@ const EMPTY_COMPARISON: FindingComparison = {
   coverage: 0,
   findings: [],
 };
+
+// ── Capability comparison table ─────────────────────────────────────────────
+function EvidencePill({ label, color }: { label: string; color: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium border ${color}`}>
+      {label}
+    </span>
+  );
+}
+
+function CapabilityTable({ report, fc, legacy }: {
+  report: Report;
+  fc: FindingComparison;
+  legacy: BaselineComparison | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+
+  // derive live evidence from report
+  const assessments = (report.finding_assessments ?? []) as any[];
+  const taintCount = assessments.filter((a) => a?.tool === "taint-inference").length;
+  const hasTaint = taintCount > 0;
+  const hasDebate = (report.debate_transcripts ?? []).length > 0;
+  const hasCorroborated = assessments.some((a) => a?.corroborated);
+  const hasFpFn = assessments.some((a) => a?.fp_fn_root_cause);
+  const hasFaultCorr = assessments.some((a) => a?.fault_correlation);
+  const hasQa = assessments.some((a) => a?.qa_verdict);
+  const hasNewInPr = assessments.some((a) => a?.introduced_by_pr);
+  const sonarRaw = legacy?.counts?.raw ?? fc.total_in_pr ?? 0;
+  const sonarMissed = legacy?.counts?.sonar_missed ?? 0;
+  const contradicted = fc.counts?.contradicted ?? 0;
+  const adjCoverage = fc.total_in_pr > 0
+    ? Math.round((fc.adjudicated / fc.total_in_pr) * 100)
+    : 0;
+
+  const rows: Array<{
+    capability: string;
+    sonar: string;
+    patchcourt: string;
+    evidence: React.ReactNode;
+  }> = [
+    {
+      capability: "Source-code analysis",
+      sonar: "Configured analysis engines and rules",
+      patchcourt: "Static-analysis tools + AI agent analysis on the same findings",
+      evidence: (
+        <div className="flex flex-wrap gap-1">
+          <EvidencePill label={`${sonarRaw} SonarQube findings`} color="text-blue-400 border-blue-400/40" />
+          <EvidencePill label={`${assessments.length} PatchCourt assessments`} color="text-teal-400 border-teal-400/40" />
+        </div>
+      ),
+    },
+    {
+      capability: "Security review",
+      sonar: "Depends on configured analyzers",
+      patchcourt: "Specialist SecurityAgent + taint-inference patterns (IRIS-inspired)",
+      evidence: (
+        <div className="flex flex-wrap gap-1">
+          {hasTaint
+            ? <EvidencePill label={`${taintCount} taint flows inferred`} color="text-purple-400 border-purple-400/40" />
+            : <EvidencePill label="No taint flows (this PR)" color="text-zinc-500 border-zinc-600" />}
+          <EvidencePill label="SecurityAgent active" color="text-red-400 border-red-400/40" />
+        </div>
+      ),
+    },
+    {
+      capability: "Code-quality review",
+      sonar: "Analyzer rules and metrics",
+      patchcourt: "Specialist QualityAgent adds correctness and maintainability claims",
+      evidence: (
+        <EvidencePill
+          label={`${assessments.filter((a) => a?.category === "maintainability" || a?.category === "correctness").length} quality assessments`}
+          color="text-cyan-400 border-cyan-400/40"
+        />
+      ),
+    },
+    {
+      capability: "Practical risk evaluation",
+      sonar: "Severity labels only; no deployment-context reasoning",
+      patchcourt: "PragmatistAgent weighs real-world exploitability and deployment impact",
+      evidence: <EvidencePill label="PragmatistAgent active" color="text-yellow-400 border-yellow-400/40" />,
+    },
+    {
+      capability: "Repository policies",
+      sonar: "Depends on configuration",
+      patchcourt: "Relevant policies retrieved via RAG and attached to each assessment",
+      evidence: (
+        <EvidencePill
+          label={`${assessments.reduce((n, a) => n + (a?.policies?.length ?? 0), 0)} policy refs matched`}
+          color="text-indigo-400 border-indigo-400/40"
+        />
+      ),
+    },
+    {
+      capability: "Finding validation",
+      sonar: "Tool's own analysis only",
+      patchcourt: "Dedicated adjudication stage: SUPPORTED / CONTRADICTED / UNCERTAIN / OUT_OF_SCOPE",
+      evidence: (
+        <div className="flex flex-wrap gap-1">
+          <EvidencePill label={`${adjCoverage}% adjudicated`} color="text-green-400 border-green-400/40" />
+          {contradicted > 0 && <EvidencePill label={`${contradicted} contradicted`} color="text-red-400 border-red-400/40" />}
+        </div>
+      ),
+    },
+    {
+      capability: "Multiple perspectives",
+      sonar: "Single analyzer view",
+      patchcourt: "Three independent agents (Security, Quality, Pragmatist) review in parallel",
+      evidence: (
+        <div className="flex flex-wrap gap-1">
+          {hasCorroborated && <EvidencePill label="Corroborated findings present" color="text-green-400 border-green-400/40" />}
+          <EvidencePill label="3 agents" color="text-teal-400 border-teal-400/40" />
+        </div>
+      ),
+    },
+    {
+      capability: "Conflict resolution",
+      sonar: "Manual investigation required",
+      patchcourt: "Conflict detector + bounded debate (≤2 rounds, retrieval-gated)",
+      evidence: hasDebate
+        ? <EvidencePill label={`${report.debate_transcripts.length} debate(s) resolved`} color="text-orange-400 border-orange-400/40" />
+        : <EvidencePill label="No conflicts this PR" color="text-zinc-500 border-zinc-600" />,
+    },
+    {
+      capability: "Evidence strength",
+      sonar: "Tool-specific severity; no common model",
+      patchcourt: "Common T1–T5 tier model: T1=tool flag, T2=corroborated, T3=policy, T4=precedent, T5=LLM",
+      evidence: (
+        <div className="flex flex-wrap gap-1">
+          {[1,2,3,4,5].map((t) => {
+            const n = assessments.filter((a) =>
+              (a?.evidence ?? []).some((e: any) => e?.tier === t)
+            ).length;
+            return n > 0
+              ? <EvidencePill key={t} label={`T${t}: ${n}`} color={t<=2 ? "text-red-400 border-red-400/40" : t===3 ? "text-yellow-400 border-yellow-400/40" : "text-zinc-400 border-zinc-600"} />
+              : null;
+          })}
+        </div>
+      ),
+    },
+    {
+      capability: "Final decision",
+      sonar: "Quality gate pass/fail",
+      patchcourt: "Deterministic scoring judge with explicit MERGE / NEEDS_REVIEW / BLOCK verdict",
+      evidence: (
+        <EvidencePill
+          label={`Score ${Number(report.overall_score ?? 0).toFixed(1)} → ${report.verdict}`}
+          color={report.verdict === "BLOCK" ? "text-red-400 border-red-400/40" : report.verdict === "NEEDS_REVIEW" ? "text-yellow-400 border-yellow-400/40" : "text-green-400 border-green-400/40"}
+        />
+      ),
+    },
+    {
+      capability: "Unsupported AI claims",
+      sonar: "Not applicable",
+      patchcourt: "Hard rule: BLOCK never rests on T5 (LLM-only) evidence alone",
+      evidence: <EvidencePill label="T5-alone BLOCK rule enforced" color="text-purple-400 border-purple-400/40" />,
+    },
+    {
+      capability: "FP/FN root cause",
+      sonar: "No root cause tagging",
+      patchcourt: "7-category taxonomy tagged on every CONTRADICTED/UNCERTAIN assessment",
+      evidence: hasFpFn
+        ? <EvidencePill label={`${assessments.filter((a) => a?.fp_fn_root_cause).length} tagged`} color="text-orange-400 border-orange-400/40" />
+        : <EvidencePill label="None this PR" color="text-zinc-500 border-zinc-600" />,
+    },
+    {
+      capability: "Fault-risk weighting",
+      sonar: "Uniform severity labels",
+      patchcourt: "Empirical fault-correlation nudge (±15%) on T1/T2 tool claims",
+      evidence: hasFaultCorr
+        ? <EvidencePill label={`${assessments.filter((a) => a?.fault_correlation === "high").length} high-fault rules`} color="text-red-400 border-red-400/40" />
+        : <EvidencePill label="No tool claims this PR" color="text-zinc-500 border-zinc-600" />,
+    },
+    {
+      capability: "Review audit",
+      sonar: "Platform-dependent",
+      patchcourt: "Full claim + evidence + verdict persisted to PostgreSQL audit trail",
+      evidence: <EvidencePill label="Audit trail active" color="text-teal-400 border-teal-400/40" />,
+    },
+    {
+      capability: "Baseline comparison",
+      sonar: "Not the primary purpose",
+      patchcourt: "Finding reconciliation: confirmed / contradicted / sonar-missed groups",
+      evidence: (
+        <div className="flex flex-wrap gap-1">
+          <EvidencePill label={`${fc.counts.confirmed ?? 0} confirmed`} color="text-green-400 border-green-400/40" />
+          {sonarMissed > 0 && <EvidencePill label={`${sonarMissed} sonar-missed`} color="text-blue-400 border-blue-400/40" />}
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <Card className="border-l-4 border-l-primary">
+      <CardHeader className="pb-2 cursor-pointer select-none" onClick={() => setOpen((o) => !o)}>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold">
+            PatchCourt vs SonarQube — Capability Comparison
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Live evidence from this review</span>
+            {open ? <ChevronUp className="size-4 text-muted-foreground" /> : <ChevronDown className="size-4 text-muted-foreground" />}
+          </div>
+        </div>
+      </CardHeader>
+      {open && (
+        <CardContent className="pt-0 pb-3">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-zinc-900">
+                  <th className="text-left px-3 py-2 text-muted-foreground font-semibold w-[18%] border border-zinc-800">Capability</th>
+                  <th className="text-left px-3 py-2 text-muted-foreground font-semibold w-[26%] border border-zinc-800">SonarQube alone</th>
+                  <th className="text-left px-3 py-2 text-muted-foreground font-semibold w-[30%] border border-zinc-800">PatchCourt approach</th>
+                  <th className="text-left px-3 py-2 text-muted-foreground font-semibold w-[26%] border border-zinc-800">Live evidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={i} className={i % 2 === 0 ? "bg-zinc-950" : "bg-zinc-900/40"}>
+                    <td className="px-3 py-2 font-medium text-foreground border border-zinc-800 align-top">{row.capability}</td>
+                    <td className="px-3 py-2 text-zinc-400 border border-zinc-800 align-top">{row.sonar}</td>
+                    <td className="px-3 py-2 text-zinc-200 border border-zinc-800 align-top">{row.patchcourt}</td>
+                    <td className="px-3 py-2 border border-zinc-800 align-top">{row.evidence}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
 
 function CodeSnippet({ snippet }: { snippet: string }) {
   const lines = snippet.split("\n");
@@ -228,6 +462,9 @@ export default function ComparisonPage() {
   return (
     <LayoutWrapper>
       <div className="space-y-6">
+
+        {/* Capability comparison — collapsible, wired to live data */}
+        <CapabilityTable report={report} fc={fc} legacy={legacy} />
 
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
