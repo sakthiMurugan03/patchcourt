@@ -72,6 +72,19 @@ async def fetch_pr(url_or_id: str | tuple[str, str, int]) -> PRContext:
             if raw is not None:
                 file_contents[fname] = raw
 
+        # Fetch base (before) versions of every changed file so the validator
+        # can distinguish findings introduced by this PR from pre-existing ones.
+        base_sha = (pr_data.get("base") or {}).get("sha")
+        base_file_contents: dict[str, str] = {}
+        for f in files:
+            fname = f.get("filename", "")
+            # Renamed/added files have no base version — skip gracefully.
+            if f.get("status") in ("added",):
+                continue
+            raw_base = await _fetch_raw(client, base, fname, base_sha)
+            if raw_base is not None:
+                base_file_contents[fname] = raw_base
+
     ctx = PRContext(
         owner=owner,
         repo=repo,
@@ -81,6 +94,7 @@ async def fetch_pr(url_or_id: str | tuple[str, str, int]) -> PRContext:
         diff=diff,
         changed_files=files,
         file_contents=file_contents,
+        base_file_contents=base_file_contents,
     )
     ctx.patches = patches
     ctx.rag_query = f"PR #{num}: {ctx.title}\n\n{ctx.body}\n\nChanged files: {', '.join(file_contents.keys())}"
