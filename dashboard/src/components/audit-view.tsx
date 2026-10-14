@@ -5,7 +5,6 @@ import { ChevronDown, ChevronRight, FileJson } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Report } from "@/lib/types";
-import { cn } from "cn";
 
 export function AuditView({ report }: { report: Report }) {
   const [open, setOpen] = useState(false);

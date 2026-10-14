@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { ViewHeader } from "@/components/view-header";
-import { History, Clock, Gavel } from "lucide-react";
+import { Clock, Gavel } from "lucide-react";
 
 export default function HistoryPage() {
   const { report, phase } = useReview();

@@ -1,12 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Shield, Key, CheckCircle2, AlertCircle, Loader2, ExternalLink } from "lucide-react";
+import { Shield, Key, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "cn";
 import { LayoutWrapper } from "@/components/layout-wrapper";
@@ -91,7 +90,7 @@ function SettingsContent() {
       } else {
         setSaveStatus({ ok: false, msg: data.detail || "Failed to save" });
       }
-    } catch (e) {
+    } catch {
       setSaveStatus({ ok: false, msg: "Network error" });
     } finally {
       setSaving(false);
@@ -106,7 +105,7 @@ function SettingsContent() {
       const res = await fetch(`${apiBase}/api/settings/llm/test`, { method: "POST" });
       const data = await res.json();
       setTestResult(data);
-    } catch (e) {
+    } catch {
       setTestResult({ ok: false, detail: "Network error" });
     } finally {
       setTesting(false);

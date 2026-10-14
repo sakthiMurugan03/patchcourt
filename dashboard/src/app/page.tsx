@@ -8,7 +8,6 @@ import { AuditView } from "@/components/audit-view";
 import { DebateTranscript } from "@/components/debate-transcript";
 import { EvidencePanel } from "@/components/evidence-panel";
 import { ReportForm } from "@/components/report-form";
-import { TierLegend } from "@/components/tier-legend";
 import { VerdictBanner } from "@/components/verdict-banner";
 import { runDemo, submitReview } from "@/lib/api";
 import type { Report } from "@/lib/types";
@@ -39,9 +38,14 @@ export default function Page() {
   const lastRequest = useRef<(() => Promise<Report>) | null>(null);
 
   useEffect(() => {
+    // Mirror the shared review context into local view state. The locals drive
+    // per-page retry/error-category handling and are also updated directly by
+    // `load`, so they must track external context changes too.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setLocalReport(report);
     setLocalPhase(phase);
     setLocalError(error);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [report, phase, error]);
 
   async function load(fn: () => Promise<Report>) {
@@ -60,7 +64,7 @@ export default function Page() {
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       const msg = err.message;
-      const cat = (err as any).category || "unknown";
+      const cat = (err as Error & { category?: string }).category || "unknown";
       setLocalError(msg);
       setLocalErrorCategory(cat);
       setLocalPhase("error");
@@ -107,7 +111,7 @@ export default function Page() {
           )}
           {localPhase === "loading" && <LoadingState />}
           {localPhase === "error" && <ErrorState error={localError} category={localErrorCategory} onRetry={handleRetry} />}
-          {localPhase === "done" && localReport && <OverviewContent report={localReport} onNewReview={handleNewReview} />}
+          {localPhase === "done" && localReport && <OverviewContent report={localReport} />}
         </div>
       </div>
     </LayoutWrapper>
@@ -192,7 +196,7 @@ function ErrorState({ error, category, onRetry }: { error: string; category?: st
   );
 }
 
-function OverviewContent({ report, onNewReview }: { report: Report; onNewReview: () => void }) {
+function OverviewContent({ report }: { report: Report }) {
   return (
     <>
       <KPIRow report={report} />

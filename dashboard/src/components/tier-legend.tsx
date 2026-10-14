@@ -2,7 +2,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TIER_INFO } from "@/lib/types";
-import { cn } from "cn";
 
 const ORDER = [1, 2, 3, 4, 5];
 

@@ -12,6 +12,10 @@ load_dotenv(_ROOT / ".env")
 
 class Settings(BaseModel):
     github_token: str = os.getenv("GITHUB_TOKEN", "")
+    # Shared secret configured on the GitHub webhook. Used to verify the
+    # ``x-hub-signature-256`` HMAC on incoming payloads. Empty → webhook
+    # signature verification is disabled (endpoint refuses to run).
+    github_webhook_secret: str = os.getenv("GITHUB_WEBHOOK_SECRET", "")
     llm_api_key: str = os.getenv("LLM_API_KEY", "")
     llm_provider: str = os.getenv("LLM_PROVIDER", "mock")  # mock|openai|claude|gemini|ollama
     llm_base_url: str = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")

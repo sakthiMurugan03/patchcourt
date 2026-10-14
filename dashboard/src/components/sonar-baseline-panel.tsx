@@ -7,9 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getBaselineLatest, refreshBaseline } from "@/lib/api";
-import type { BaselineReport, Verdict, SonarSeverity, BaselineComparison } from "@/lib/types";
+import type { BaselineReport, Verdict, SonarSeverity, BaselineComparison, SonarIssue } from "@/lib/types";
 import { VERDICT_META } from "@/lib/types";
 import { cn } from "cn";
+
+type BaselineIssue = SonarIssue & { code_snippet?: string };
+type SonarMissedFinding = BaselineComparison["sonar_missed"][number];
 
 const SONAR_SEV_META: Record<SonarSeverity, { color: string; label: string; class: string }> = {
   BLOCKER:  { color: "var(--severity-critical)", label: "BLOCKER", class: "sev-critical" },
@@ -27,11 +30,6 @@ const SEV_TEXT: Record<string, string> = {
   INFO: "text-blue-400",
 };
 
-function SeverityChip({ severity }: { severity: SonarSeverity }) {
-  const meta = SONAR_SEV_META[severity] ?? SONAR_SEV_META.INFO;
-  return <Badge variant="outline" className={cn("font-mono text-[10px]", meta.class)} style={{ borderColor: meta.color, color: meta.color }}>{meta.label}</Badge>;
-}
-
 function CodeSnippet({ snippet }: { snippet: string }) {
   const lines = snippet.split("\n");
   return (
@@ -48,7 +46,7 @@ function CodeSnippet({ snippet }: { snippet: string }) {
   );
 }
 
-function SonarFindingCard({ issue, borderColor }: { issue: any; borderColor: string }) {
+function SonarFindingCard({ issue, borderColor }: { issue: BaselineIssue; borderColor: string }) {
   return (
     <div className={`border-l-4 rounded-r-lg p-4 bg-card ${borderColor}`}>
       <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -65,7 +63,7 @@ function SonarFindingCard({ issue, borderColor }: { issue: any; borderColor: str
   );
 }
 
-function MissedFindingCard({ m }: { m: any }) {
+function MissedFindingCard({ m }: { m: SonarMissedFinding }) {
   return (
     <div className="border-l-4 border-l-primary rounded-r-lg p-4 bg-card">
       <div className="flex flex-wrap items-center gap-2 mb-1">
@@ -112,7 +110,11 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => { if (defaultPrUrl) setPrUrl(defaultPrUrl); }, [defaultPrUrl]);
+  useEffect(() => {
+    // Adopt a late-arriving default PR URL (e.g. from the shared review context).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (defaultPrUrl) setPrUrl(defaultPrUrl);
+  }, [defaultPrUrl]);
 
   async function handleRefresh() {
     if (!prUrl) return;
@@ -139,12 +141,6 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
     {} as Record<SonarSeverity, number>,
   );
   const hasBaseline = !!report;
-
-  const VerdictIcon = {
-    MERGE: CheckCircle2,
-    NEEDS_REVIEW: AlertTriangle,
-    BLOCK: XCircle,
-  } as const;
 
   const verdictColors = {
     MERGE: "text-green-400",
@@ -279,7 +275,7 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
                     <p className="text-xs italic text-muted-foreground">No corroborated issues — all SonarQube findings suppressed as unbacked.</p>
                   ) : (
                     <div className="space-y-3">
-                      {comp.confirmed.map((issue: any, i: number) => (
+                      {comp.confirmed.map((issue, i: number) => (
                         <SonarFindingCard key={`c-${i}`} issue={issue} borderColor="border-l-green-500" />
                       ))}
                     </div>
@@ -293,7 +289,7 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
                     <p className="text-xs italic text-muted-foreground">All SonarQube findings backed.</p>
                   ) : (
                     <div className="space-y-3">
-                      {comp.down_tiered.map((issue: any, i: number) => (
+                      {comp.down_tiered.map((issue, i: number) => (
                         <SonarFindingCard key={`d-${i}`} issue={issue} borderColor="border-l-orange-500" />
                       ))}
                     </div>
@@ -307,7 +303,7 @@ export function SonarBaselinePanel({ defaultPrUrl = "" }: { defaultPrUrl?: strin
                     <p className="text-xs italic text-muted-foreground">No PatchCourt-only findings beyond SonarQube.</p>
                   ) : (
                     <div className="space-y-3">
-                      {comp.sonar_missed.map((m: any, i: number) => (
+                      {comp.sonar_missed.map((m, i: number) => (
                         <MissedFindingCard key={`m-${i}`} m={m} />
                       ))}
                     </div>

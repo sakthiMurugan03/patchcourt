@@ -1,7 +1,5 @@
 "use client";
 
-import { cn } from "cn";
-
 interface ViewHeaderProps {
   title: string;
   subtitle?: string;

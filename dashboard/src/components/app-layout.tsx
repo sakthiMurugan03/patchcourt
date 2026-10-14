@@ -3,7 +3,6 @@
 import { ReactNode, useState } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { TopBar } from "@/components/top-bar";
-import { cn } from "cn";
 
 interface AppLayoutProps {
   children: ReactNode;

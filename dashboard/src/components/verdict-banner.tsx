@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Scale, XCircle, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle2, XCircle, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { VERDICT_META, type Report } from "@/lib/types";

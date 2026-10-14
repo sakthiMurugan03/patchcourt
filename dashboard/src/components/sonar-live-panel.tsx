@@ -1,17 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
-  AlertCircle,
   CheckCircle2,
-  RefreshCw,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
   Loader2,
   TriangleAlert,
   CircleAlert,
-  Info,
   Shield,
   ShieldCheck,
   Wrench,
@@ -21,19 +17,12 @@ import {
   Flame,
   Percent,
   Copy,
-  Activity,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "cn";
-import {
-  getSonarHealth,
-  getSonarQualityGate,
-  getSonarMeasures,
-  getSonarIssues,
-} from "@/lib/api";
-import type { SonarHealth, SonarQualityGate, SonarMeasures, SonarIssuesResponse, SonarIssueLive } from "@/lib/types";
+import type { SonarQualityGate, SonarIssuesResponse } from "@/lib/types";
 
 const SEVERITY_META = {
   BLOCKER: { color: "var(--severity-critical)", label: "BLOCKER" },
@@ -66,17 +55,6 @@ function SeverityDot({ severity }: { severity: keyof typeof SEVERITY_META }) {
       style={{ backgroundColor: meta.color }}
       title={meta.label}
     />
-  );
-}
-
-function RatingBadge({ rating }: { rating: string | undefined }) {
-  const label = rating ? RATING_LABELS[rating] : "—";
-  const num = rating ? parseInt(rating, 10) : 0;
-  const colors = ["", "text-green-400", "text-lime-400", "text-amber-400", "text-orange-400", "text-red-400"];
-  return (
-    <Badge variant="outline" className={cn("font-mono text-base", colors[num])}>
-      {label}
-    </Badge>
   );
 }
 
@@ -117,12 +95,7 @@ function SeverityBar({ counts }: { counts: Record<string, number> }) {
 
 export function SonarLivePanel({ component }: { component?: string } = {}) {
   const [health, setHealth] = useState<{ available: boolean; error?: string } | null>(null);
-  const [qualityGate, setQualityGate] = useState<{
-    available: boolean;
-    status?: string;
-    conditions?: any[];
-    error?: string;
-  } | null>(null);
+  const [qualityGate, setQualityGate] = useState<SonarQualityGate | null>(null);
   const [measures, setMeasures] = useState<{
     available: boolean;
     bugs?: string;
@@ -136,14 +109,7 @@ export function SonarLivePanel({ component }: { component?: string } = {}) {
     sqale_rating?: string;
     error?: string;
   } | null>(null);
-  const [issues, setIssues] = useState<{
-    available: boolean;
-    total: number;
-    page: number;
-    page_size: number;
-    issues: any[];
-    error?: string;
-  } | null>(null);
+  const [issues, setIssues] = useState<SonarIssuesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -177,7 +143,7 @@ export function SonarLivePanel({ component }: { component?: string } = {}) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [componentQS]);
+  }, [componentQS, apiBase]);
 
   const fetchIssuesPage = useCallback(async (page: number) => {
     setRefreshing(true);
@@ -192,9 +158,12 @@ export function SonarLivePanel({ component }: { component?: string } = {}) {
     } finally {
       setRefreshing(false);
     }
-  }, [componentQS]);
+  }, [componentQS, apiBase]);
 
   useEffect(() => {
+    // Initial load + 15s polling. The async fetch updates state, which is the
+    // intended "synchronize with an external system" use of an effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAll();
     const interval = setInterval(() => fetchAll(true), 15000);
     return () => clearInterval(interval);
@@ -226,7 +195,6 @@ export function SonarLivePanel({ component }: { component?: string } = {}) {
     return acc;
   }, {} as Record<string, number>) ?? {};
 
-  const qgStatus = qg?.status ?? "UNKNOWN";
   const qgPassed = qg?.status === "OK";
 
   return (
@@ -363,12 +331,12 @@ export function SonarLivePanel({ component }: { component?: string } = {}) {
                   <tr>
                     <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
                       {component
-                        ? <>No issues found — if this PR hasn't been scanned yet, go to the <strong>Baseline</strong> tab and click <strong>Refresh baseline</strong> first.</>
+                        ? <>No issues found — if this PR hasn&apos;t been scanned yet, go to the <strong>Baseline</strong> tab and click <strong>Refresh baseline</strong> first.</>
                         : "No issues found"}
                     </td>
                   </tr>
                 ) : (
-                  issueData?.issues?.map((issue, i) => (
+                  issueData?.issues?.map((issue) => (
                     <tr key={issue.key} className="border-b border-border/50 hover:bg-accent/30">
                       <td className="px-3 py-2 text-center"><SeverityDot severity={issue.severity} /></td>
                       <td className="px-3 py-2">

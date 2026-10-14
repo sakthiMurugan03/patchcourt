@@ -346,17 +346,29 @@ export default function ComparisonPage() {
     try {
       const raw = await runComparisonDemo();
       // Wrap the comparison demo payload into a Report-shaped object
-      const demoReport = {
-        pr_url: (raw as any)?.baseline?.pr_url ?? "https://github.com/patchcourt/demo/pull/1337",
-        overall_score: (raw as any)?.baseline?.patchcourt?.overall_score ?? 0,
-        verdict: (raw as any)?.baseline?.patchcourt?.verdict ?? "MERGE",
-        files: (raw as any)?.report?.files ?? [],
-        claims: (raw as any)?.report?.claims ?? [],
-        debate_transcripts: (raw as any)?.report?.debate_transcripts ?? [],
-        finding_assessments: (raw as any)?.report?.finding_assessments ?? [],
-        baseline_report: (raw as any)?.baseline ?? null,
+      const demo = raw as {
+        baseline?: {
+          pr_url?: string;
+          patchcourt?: { overall_score?: number; verdict?: string };
+        };
+        report?: {
+          files?: Report["files"];
+          claims?: Report["claims"];
+          debate_transcripts?: Report["debate_transcripts"];
+          finding_assessments?: Report["finding_assessments"];
+        };
       };
-      setReport(demoReport as any);
+      const demoReport: Report = {
+        pr_url: demo.baseline?.pr_url ?? "https://github.com/patchcourt/demo/pull/1337",
+        overall_score: demo.baseline?.patchcourt?.overall_score ?? 0,
+        verdict: (demo.baseline?.patchcourt?.verdict ?? "MERGE") as Report["verdict"],
+        files: demo.report?.files ?? [],
+        claims: demo.report?.claims ?? [],
+        debate_transcripts: demo.report?.debate_transcripts ?? [],
+        finding_assessments: demo.report?.finding_assessments ?? [],
+        baseline_report: (demo.baseline as Report["baseline_report"]) ?? null,
+      };
+      setReport(demoReport);
       setPhase("done");
       setError("");
     } catch (e) {
@@ -559,9 +571,9 @@ export default function ComparisonPage() {
                     <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded font-mono">{sonar.rule}</span>
                     <span className="text-xs text-muted-foreground">{sonar.type}</span>
                     {/* PR-introduction badge — the most important signal */}
-                    {(pcr as any)?.introduced_by_pr ? (
+                    {(pcr)?.introduced_by_pr ? (
                       <span className="text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/40 px-1.5 py-0.5 rounded">NEW IN PR</span>
-                    ) : (pcr as any)?.pre_existing ? (
+                    ) : (pcr)?.pre_existing ? (
                       <span className="text-xs font-bold bg-zinc-700/60 text-zinc-400 border border-zinc-600 px-1.5 py-0.5 rounded">PRE-EXISTING</span>
                     ) : null}
                     <span className="ml-auto text-xs font-bold uppercase">{GROUP_LABEL[group] ?? group}</span>
@@ -574,8 +586,8 @@ export default function ComparisonPage() {
                   </div>
 
                   {/* Code snippet — highlighted context window around the flagged line */}
-                  {(pcr as any)?.code_snippet ? (
-                    <CodeSnippet snippet={(pcr as any).code_snippet} />
+                  {(pcr)?.code_snippet ? (
+                    <CodeSnippet snippet={(pcr).code_snippet} />
                   ) : null}
 
                   {/* PatchCourt adjudication details */}
@@ -602,7 +614,7 @@ export default function ComparisonPage() {
                       {pcr.rationale ? (
                         <p className="text-xs text-muted-foreground leading-relaxed">{pcr.rationale}</p>
                       ) : null}
-                      {(pcr as any).pre_existing ? (
+                      {(pcr).pre_existing ? (
                         <p className="text-xs text-zinc-500 italic">⚠ This issue existed before this PR. It is not introduced by the current change — consider tracking separately.</p>
                       ) : null}
                       {pcr.fp_fn_root_cause ? (
@@ -618,7 +630,7 @@ export default function ComparisonPage() {
                       ) : null}
                       {pcr.policies?.length > 0 ? (
                         <div className="mt-1 space-y-1">
-                          {pcr.policies.map((pol: any, j: number) => (
+                          {pcr.policies.map((pol, j: number) => (
                             <div key={j} className="text-xs bg-zinc-900/60 rounded px-2 py-1">
                               <span className="font-medium text-primary">[{pol.id}] {pol.title}</span>
                               {pol.excerpt ? <p className="text-muted-foreground mt-0.5">{pol.excerpt}</p> : null}
@@ -649,7 +661,7 @@ export default function ComparisonPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {legacy.sonar_missed.map((m: any, i: number) => (
+              {legacy.sonar_missed.map((m, i: number) => (
                 <div key={i} className="text-sm border-l-2 border-l-primary pl-3 py-1">
                   <span className="font-mono text-xs text-muted-foreground">{m.file}:{m.line}</span>
                   <span className="ml-2 text-xs text-muted-foreground">Agent: {m.agent} · Tier T{m.tier}</span>
@@ -663,7 +675,7 @@ export default function ComparisonPage() {
         {/* Taint-inference findings (IRIS-inspired) */}
         {(() => {
           const taintAssessments = (report?.finding_assessments ?? []).filter(
-            (a: any) => a?.tool === "taint-inference"
+            (a) => a?.tool === "taint-inference"
           );
           if (!taintAssessments.length) return null;
           return (
@@ -677,7 +689,7 @@ export default function ComparisonPage() {
                 <p className="text-xs text-muted-foreground">
                   Not flagged by the static analyzer. Inferred from source/sink patterns (IRIS-inspired). Requires human verification.
                 </p>
-                {taintAssessments.map((a: any, i: number) => (
+                {taintAssessments.map((a, i: number) => (
                   <div key={i} className="border-l-2 border-l-purple-500 pl-3 py-1">
                     <div className="flex items-center gap-2 mb-0.5">
                       <span className="font-mono text-xs text-muted-foreground">{a.file}:{a.line}</span>

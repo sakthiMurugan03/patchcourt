@@ -1,0 +1,6 @@
+# PatchCourt Python dependencies.
+#
+# The single source of truth is pyproject.toml; this file exists so CI and
+# Docker builds can `pip install -r requirements.txt`. The dev extra includes
+# pytest, pytest-asyncio and pytest-cov (needed for `--cov`).
+-e .[dev]

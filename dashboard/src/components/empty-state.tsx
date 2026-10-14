@@ -1,21 +1,12 @@
 "use client";
 
-import { Gavel, MessageSquare, SearchCheck, BarChart2, History } from "lucide-react";
-import { cn } from "cn";
+import { Gavel } from "lucide-react";
 
 interface EmptyStateProps {
   message: string;
   description?: string;
   icon?: React.ComponentType<{ className?: string }>;
 }
-
-const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
-  evidence: SearchCheck,
-  debate: MessageSquare,
-  baseline: BarChart2,
-  history: History,
-  default: Gavel,
-};
 
 export function EmptyState({ message, description, icon: Icon = Gavel }: EmptyStateProps) {
   return (

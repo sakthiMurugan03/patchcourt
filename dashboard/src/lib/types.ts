@@ -45,6 +45,7 @@ export type Report = {
   files: FileReport[];
   claims: Claim[];
   debate_transcripts: Debate[];
+  contextual_summary?: ContextualSummary;
   finding_assessments?: Array<{
     tool: string;
     file: string;
@@ -59,6 +60,7 @@ export type Report = {
     corroborating_tools: string[];
     contextual_priority: string;
     contextual_action: string;
+    code_snippet?: string;
     fp_fn_root_cause?: string;
     fp_fn_explanation?: string;
     fault_correlation?: string;
@@ -190,6 +192,8 @@ export type ContextualSummary = {
   total?: number;
   blocking?: number;
   by_status?: Record<string, number>;
+  by_priority?: Record<string, number>;
+  by_action?: Record<string, number>;
 };
 
 export type BaselineReport = {

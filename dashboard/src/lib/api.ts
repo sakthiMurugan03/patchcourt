@@ -13,11 +13,6 @@ export function projectKeyForPr(prUrl: string): string | null {
   return raw.replace(/[^a-z0-9_.:-]/g, "-");
 }
 
-interface FriendlyError {
-  category: string;
-  message: string;
-}
-
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = {
     method,

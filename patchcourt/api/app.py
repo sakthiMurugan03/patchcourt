@@ -12,6 +12,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from patchcourt.api.github_webhook import router as github_webhook_router
+from patchcourt.api.stream import router as stream_router
 from patchcourt.api.webhook import router as webhook_router
 from patchcourt.demo import demo_pr
 from patchcourt.graph import run_review
@@ -215,6 +217,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(webhook_router)
+app.include_router(github_webhook_router)
+app.include_router(stream_router)
 
 _TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 app.mount(

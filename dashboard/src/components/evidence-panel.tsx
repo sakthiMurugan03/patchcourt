@@ -1,10 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BadgeCheck, FileCode2, TestTubes, ChevronDown, ChevronRight, ChevronUp, ArrowUpDown } from "lucide-react";
+import { BadgeCheck, ChevronDown, ChevronRight, ChevronUp, ArrowUpDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -41,6 +40,35 @@ type SortDirection = "asc" | "desc";
 
 function severityScore(c: Claim) {
   return c.severity * (c.corroborated ? 1.25 : 1) * TIER_INFO[c.tier]?.weight;
+}
+
+function SortableHeader({
+  label,
+  sortKey,
+  currentSort,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  currentSort: SortKey;
+  sortDir: SortDirection;
+  onSort: (k: SortKey) => void;
+}) {
+  const isActive = currentSort === sortKey;
+  return (
+    <th
+      onClick={() => onSort(sortKey)}
+      className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground select-none"
+      style={{ userSelect: "none" }}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        {isActive && (sortDir === "asc" ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />)}
+        {!isActive && <ArrowUpDown className="size-3.5 text-muted-foreground/30" />}
+      </div>
+    </th>
+  );
 }
 
 function EvidenceRow({ claim, onToggle }: { claim: ClaimWithExp; onToggle: () => void }) {
@@ -164,22 +192,10 @@ export function EvidencePanel({ claims }: { claims: Claim[] }) {
     return list;
   }, [claimsWithExpanded, minSeverity, maxTier, source, sortBy, sortDir]);
 
-  function SortableHeader({ label, sortKey, currentSort, onSort }: { label: string; sortKey: SortKey; currentSort: SortKey; onSort: (k: SortKey) => void }) {
-    const isActive = currentSort === sortKey;
-    return (
-      <th
-        onClick={() => onSort(sortKey)}
-        className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground select-none"
-        style={{ userSelect: "none" }}
-      >
-        <div className="flex items-center gap-1">
-          {label}
-          {isActive && (sortDir === "asc" ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />)}
-          {!isActive && <ArrowUpDown className="size-3.5 text-muted-foreground/30" />}
-        </div>
-      </th>
-    );
-  }
+  const toggleSort = (k: SortKey) => {
+    setSortBy(k);
+    setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc");
+  };
 
   return (
     <Card className="w-full">
@@ -227,10 +243,10 @@ export function EvidencePanel({ claims }: { claims: Claim[] }) {
             <thead>
               <tr className="bg-muted/50 border-b border-border">
                 <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider w-8" />
-                <SortableHeader label="Sev" sortKey="severity" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
-                <SortableHeader label="Tier" sortKey="tier" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
-                <SortableHeader label="Source" sortKey="source" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
-                <SortableHeader label="File:Line" sortKey="file" currentSort={sortBy} onSort={k => { setSortBy(k); setSortDir(sortBy === k && sortDir === "desc" ? "asc" : "desc"); }} />
+                <SortableHeader label="Sev" sortKey="severity" currentSort={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                <SortableHeader label="Tier" sortKey="tier" currentSort={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                <SortableHeader label="Source" sortKey="source" currentSort={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                <SortableHeader label="File:Line" sortKey="file" currentSort={sortBy} sortDir={sortDir} onSort={toggleSort} />
                 <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Finding</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Corroborated</th>
                 <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">Weight</th>
