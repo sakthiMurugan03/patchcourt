@@ -24,30 +24,45 @@
 Three specialist LLM agents review a PR **in parallel**. Every claim is tied to a
 static-analysis tool finding, repository policy, git precedent, or LLM reasoning —
 each assigned a trust tier (T1–T5). Disagreements go through a **bounded,
-retrieval-gated debate**, and a deterministic judge produces a final score and
-verdict: `MERGE` | `NEEDS_REVIEW` | `BLOCK`.
+code-context-aware, de-duplicated debate**, and a deterministic judge produces a
+final score and verdict: `MERGE` | `NEEDS_REVIEW` | `BLOCK`.
 
 > **BLOCK never rests on T5 alone.** A hard rule in the judge (enforced in code
 > and unit-tested) downgrades verdicts that cross the block threshold only via
 > LLM-only claims.
 
 ```
-GitHub PR ──► ingest ──► RAG (Qdrant) ──► evidence engine ──► parallel agents ──► conflict ─► (debate?) ─► judge ─► report
-                     └──────────────────────── tools ─────────┘                    (sandboxed)
+GitHub PR ──► ingest ──► RAG (Qdrant) ──► evidence engine ──► adjudication ──► parallel agents ──► conflict ─► (debate?) ──► judge ──► report
+                     └──────────────────────── tools ─────────┘                                (sandboxed · code-context · deduped)
 ```
 
 ## Features
 
 - **Evidence engine** — static-analysis adapters (semgrep · bandit · gitleaks · radon) produce
   T1–T2 findings; *corroboration* (two tools on the same line → T2 + `corroborated` flag) is first-class.
+- **Finding adjudication** — every scanner finding is validated against the PR's changed
+  lines, matched to repository policies, cross-tool correlated, and prioritised in context
+  *before* it reaches an agent — the raw scanner count is never trusted as-is.
 - **Docker sandbox** — untrusted PR code is materialized and scanned inside an isolated
   container (`--network none`, memory/pids limits): analysis cannot touch your host.
 - **Tiered trust + hard BLOCK rule** — T5 (LLM) claims can never force a block on their own.
-- **Bounded debate** — ≤ 2 rounds, rebuttals pull *fresh* RAG evidence (retrieval-gated).
+- **Code-context-aware debate** — disputes run a bounded, retrieval-gated debate (≤ 2 rounds).
+  Both agents are primed with a line-window **code snippet** around the finding, and every turn
+  is **de-duplicated** against prior turns (token-Jaccard), so the debate *converges* instead of
+  restating itself.
+- **Plain-English verdicts** — each dispute ends with a severity-tagged one-liner (what's wrong,
+  why it matters, how to fix it), rendered as a banner above the transcript.
+- **Dynamic comparison** — a SonarQube-shaped baseline is derived from the active review's own
+  tool findings and reconciled finding-by-finding against PatchCourt's adjudication
+  (supported / contradicted / out-of-scope / uncertain). Fully offline, no SonarQube needed.
 - **Offline demo** — runs with zero credentials (`mock` LLM + synthetic scanner or sandbox).
 - **Async pipeline** — GitHub webhook → Celery → Redis; full audit trail in PostgreSQL.
-- **Next.js dashboard** — courtroom-themed live evidence docket, tier filters, debate transcript.
-- **LLM-agnostic** — mock / OpenAI / Claude / Gemini (free tier) / Ollama via `LLM_PROVIDER`.
+- **Next.js dashboard** — courtroom-themed, **state-synchronised** tabs: evidence docket, court
+  debate transcript, SonarQube baseline, live SonarQube, dynamic comparison, history, settings.
+- **Adjudication benchmark** — a labeled, offline harness scores finding-status accuracy,
+  precision/recall/F1, and false-positive rate (`python -m patchcourt benchmark`).
+- **LLM-agnostic** — mock / OpenAI / Claude / Gemini (free tier) / Ollama via `LLM_PROVIDER`,
+  switchable at runtime from the dashboard Settings tab.
 
 ## Screenshots
 
@@ -55,9 +70,9 @@ GitHub PR ──► ingest ──► RAG (Qdrant) ──► evidence engine ─�
 |:---:|:---:|
 | <img alt="Overview" width="100%" src="https://github.com/user-attachments/assets/13133abd-ea4e-47d7-99b7-2d8f26dbe55f" /> | <img alt="Evidence" width="100%" src="https://github.com/user-attachments/assets/ac4752fb-316b-4047-8ecd-137882933eb4" /> |
 
-| Debate Transcript | SonarQube Baseline (comparison) |
+| Courtroom Debate (verdict + code context) | Comparison (SonarQube vs PatchCourt) |
 |:---:|:---:|
-| <img alt="Debate Transcript" width="100%" src="https://github.com/user-attachments/assets/6cb65cc9-b839-4807-8a38-3c9c60a2c8ab" /> | <img alt="Baseline" width="100%" src="https://github.com/user-attachments/assets/0d314586-d09d-4d37-b6a4-2a0dae5b6cce" /> |
+| <img alt="Debate Transcript" width="100%" src="https://github.com/user-attachments/assets/6cb65cc9-b839-4807-8a38-3c9c60a2c8ab" /> | <img alt="Comparison" width="100%" src="https://github.com/user-attachments/assets/0d314586-d09d-4d37-b6a4-2a0dae5b6cce" /> |
 
 ## Architecture — five layers
 
@@ -74,11 +89,12 @@ flowchart TB
         PG[(PostgreSQL — audit trail)]
     end
     subgraph L3["Layer 3 · Intelligence"]
+        ADJ[Finding adjudication]
         SEC[Security Agent]
         QUA[Quality Agent]
         PRA[Pragmatist Agent]
         CON{Conflict detector}
-        DEB[Debate ≤ 2 rounds]
+        DEB["Debate ≤ 2 rounds<br/>deduped · code-context"]
         JUG[Judge — deterministic scoring + T5 rule]
     end
     subgraph L4["Layer 4 · Evidence"]
@@ -103,7 +119,8 @@ flowchart TB
     SAN --> TOOLS
     TOOLS --> ENG
     RAG --> ENG
-    ENG --> SEC & QUA & PRA
+    ENG --> ADJ
+    ADJ --> SEC & QUA & PRA
     SEC & QUA & PRA --> CON
     CON -->|conflict| DEB
     CON -->|none| JUG
@@ -126,6 +143,61 @@ flowchart TB
 **Hard constraint (enforced in `judge/scoring.py`, unit-tested):** if the score
 crosses the block threshold only via T5-only claims, the verdict is downgraded to
 `NEEDS_REVIEW`.
+
+## Courtroom Debate
+
+When the conflict detector finds two agents disagreeing about the same finding, the
+dispute is escalated to a **bounded debate**. Each round gives a *prosecution* (the
+claim's rationale) and a *defense* (the challenge) a turn to argue, with fresh RAG
+evidence pulled in on rebuttal — capped at `debate_max_rounds` (default 2).
+
+Two mechanisms keep the debate grounded and honest:
+
+- **Code context.** Before a round, PatchCourt extracts a ±5-line **snippet** around the
+  finding from the PR's own file contents and hands it — plus the identifiers it contains —
+  to *both* agents. Rebuttals therefore cite the real surrounding code instead of guessing
+  from the issue text. The snippet is returned as `code_snippet` on the transcript.
+- **De-duplication & convergence.** Every turn is scored against *all* prior turns with
+  token-Jaccard similarity (`_REDUNDANCY_THRESHOLD = 0.75`). A redundant turn is rejected
+  and re-prompted with a "make a genuinely new argument" nudge; if an entire round repeats,
+  the debate **converges early** and the last substantive turns are kept. Prior turns are
+  never overwritten. Both system prompts carry an explicit no-repeat rule.
+
+Each dispute also carries a **plain-English `verdict_summary`** — a severity-tagged line
+(`⛔ Blocking`, `⚠️ Action Required`, `💡 Suggested`, …) describing the issue, its impact,
+and a remediation hint. It is LLM-authored when a provider is configured and falls back to
+a deterministic template offline, so it is always present.
+
+The output is a `DebateTranscript` per dispute: `file`, `supporting`, `opposing`, `rounds`,
+`code_snippet`, and `verdict_summary`. The dashboard's **Debate** tab renders the verdict
+banner, the highlighted source snippet, and the (de-duplicated) argument turns.
+
+## Comparison — SonarQube vs PatchCourt
+
+The **Comparison** tab answers one question for the *active* PR: *of everything the scanner
+reported, what did PatchCourt actually stand behind?*
+
+The comparison is **derived from the review itself** — no separate scan, no external call.
+`patchcourt/comparison.py` reshapes the review's tool-backed findings into a SonarQube-shaped
+baseline (severity `BLOCKER…INFO`, type `VULNERABILITY / BUG / CODE_SMELL`), then reconciles
+them against the review's `FindingAssessment` set using the shared baseline helpers:
+
+- **Supported** — a scanner finding PatchCourt confirmed (corroborating tools highlighted).
+- **Contradicted** — PatchCourt dismissed it as a false positive, with its rationale.
+- **Out of scope / uncertain / unmatched** — for grouping the remainder.
+
+Each row pairs the scanner finding (severity, rule, type, `file:line`, message) with
+PatchCourt's contextual priority, action, rationale, and any matched repository policies,
+plus a coverage metric (`adjudicated / total_in_pr`).
+
+Because it rides on the shared review report (`ReviewReport.baseline_report`), the comparison
+is **state-synchronised** with every other tab and **resets automatically** whenever a new
+review runs — there is no stale workspace and no separate "refresh" call.
+
+> The standalone **SonarQube Baseline** tab is a different, optional feature: it renders the
+> newest *saved* SonarQube report (`GET /api/baseline/latest`) instantly — even when SonarQube
+> is down — and can trigger a fresh live scan + reconciliation (`POST /api/baseline`) when a
+> SonarQube server is running.
 
 ## Quick start (no keys, fully offline)
 
@@ -158,6 +230,9 @@ open http://localhost:3000                             # dashboard
 python -m patchcourt review https://github.com/octocat/Hello-World/pull/1
 python -m patchcourt review --demo                     # offline demo
 python -m patchcourt review <pr_url> --quiet           # machine-readable
+python -m patchcourt baseline <pr_url>                 # SonarQube-vs-PR report (writes reports/)
+python -m patchcourt benchmark                         # offline adjudication benchmark
+python -m patchcourt benchmark --quiet                 # summary only
 ```
 
 ### REST API
@@ -166,7 +241,7 @@ python -m patchcourt review <pr_url> --quiet           # machine-readable
 # offline demo
 curl -X POST http://localhost:8000/api/review/demo
 
-# review a real PR
+# review a real PR (response includes baseline_report — see Comparison)
 curl -X POST http://localhost:8000/api/review \
   -H 'Content-Type: application/json' \
   -d '{"pr_url":"https://github.com/octocat/Hello-World/pull/1"}'
@@ -174,11 +249,29 @@ curl -X POST http://localhost:8000/api/review \
 # newest saved SonarQube baseline (instant, offline-safe)
 curl http://localhost:8000/api/baseline/latest
 
-# fresh comparison — needs SonarQube running
+# fresh SonarQube scan + PatchCourt reconciliation — needs SonarQube running
 curl -X POST http://localhost:8000/api/baseline \
   -H 'Content-Type: application/json' \
   -d '{"pr_url":"https://github.com/octocat/Hello-World/pull/1"}'
 ```
+
+| Method & path | Purpose |
+|---------------|---------|
+| `POST /api/review` | Review a PR; response carries `baseline_report` (the derived comparison) |
+| `POST /api/review/demo` | Offline demo review (synthetic scanner + mock LLM) |
+| `GET /api/baseline/latest` | Newest *saved* SonarQube baseline (offline-safe) |
+| `POST /api/baseline` | Fresh live scan + reconciliation (needs SonarQube) |
+| `GET /api/comparison/demo` | Static hand-authored comparison workspace (legacy) |
+| `GET /api/benchmark/latest` | Newest saved adjudication benchmark result |
+| `POST /api/benchmark/run` | Run + save the offline adjudication benchmark |
+| `GET /api/sonar/health` | Is SonarQube reachable? |
+| `GET /api/sonar/quality-gate` | Quality-gate status (`?component=<key>`) |
+| `GET /api/sonar/measures` | Component metrics (`?component=<key>`) |
+| `GET /api/sonar/issues` | Paginated issue search (`?page=&severities=&types=&component=`) |
+| `GET /api/settings/llm` | Current effective LLM settings (runtime overrides env) |
+| `POST /api/settings/llm` | Update provider/model/key/base URL at runtime — no restart |
+| `POST /api/settings/llm/test` | Test the current provider connection |
+| `GET /health` | Liveness probe |
 
 ### GitHub webhook
 
@@ -200,17 +293,21 @@ cd dashboard && npm install && npm run dev        # http://localhost:3000
 npx shadcn@latest add button card badge tabs select input separator skeleton textarea label
 ```
 
-Paste a PR URL (or hit **Offline Demo**). The courtroom-themed UI shows the
-verdict banner, the evidence docket (filter/sort by tier, severity, agent;
-corroborated pills), the debate transcript, a living T1–T5 legend, and a raw
-audit-payload toggle. A second tab, **SonarQube Baseline**, renders the latest
-saved baseline report instantly (even when the Sonar container is down):
-raw finding count + severity breakdown, PatchCourt's verdict for the same PR,
-and a three-group diff (confirmed/corroborated, down-tiered as unbacked,
-Sonar-missed) with the headline
-`SonarQube raw: N | PatchCourt confirmed: M | suppressed as unbacked: N-M`.
-**Refresh baseline** runs a fresh `POST /api/baseline` (needs SonarQube up);
-**Open SonarQube UI** links to `http://localhost:9000`.
+Paste a PR URL (or hit **Offline Demo**). The review is held in a shared
+`ReviewContext`, so **every tab renders from the same report** and a new run resets
+them all at once — no stale views. The courtroom-themed sidebar has eight tabs:
+
+| Tab | What it shows |
+|-----|---------------|
+| **Overview** | Verdict banner, KPIs, score breakdown, charts, T1–T5 legend |
+| **Evidence** | Evidence docket — filter/sort by tier, severity, agent; corroborated pills; raw audit-payload toggle |
+| **Debate** | Courtroom Debate transcript — **plain-English verdict banner** + highlighted **code snippet** per dispute |
+| **SonarQube Baseline** | Newest *saved* SonarQube report (instant, works when Sonar is down); **Refresh baseline** runs a live `POST /api/baseline`; **Open SonarQube UI** → `http://localhost:9000` |
+| **SonarQube Live** | Live quality gate, measures, and paginated issue search from a running SonarQube |
+| **Comparison** | **Dynamic** SonarQube-vs-PatchCourt reconciliation for the active PR (derived from the review itself) |
+| **History** | Past reviews from the PostgreSQL audit trail |
+| **Settings** | Switch LLM provider/model/key at runtime and test the connection |
+
 `NEXT_PUBLIC_API_BASE` defaults to `http://localhost:8000`.
 
 ## LLM providers
@@ -255,7 +352,7 @@ docker compose --profile worker up -d # optional: async webhook consumer
 docker compose --profile dashboard up # optional: dashboard on :3000
 ```
 
-## SonarQube baseline (stage 8)
+## SonarQube baseline
 
 Standalone SonarQube + a baseline comparison that maps *unresolved* SonarQube
 issues onto the files a GitHub PR actually changes. Blocker/Critical findings
@@ -298,45 +395,62 @@ with no keys.
 | `USE_MOCK_LLM` | Force deterministic mock | auto |
 | `PATCHCOURT_TOOLS` | Commas-separated adapters | `semgrep,bandit,gitleaks,radon` |
 | `USE_SYNTHETIC_TOOLS` | Add offline scanner | `false` |
+| `PATCHCOURT_DEMO` | Force demo mode | `false` |
 | `SANDBOX_ENABLED` | Run tools in Docker sandbox | `false` |
 | `SANDBOX_IMAGE` / `SANDBOX_WORKSPACE` / `SANDBOX_WORKDIR` | Sandbox tuning | `patchcourt-sandbox:latest` / `/workspace` / `""` |
 | `QDRANT_URL` / `QDRANT_COLLECTION` | Vector store | empty ⇒ in-memory |
 | `REDIS_URL` | Celery broker | empty ⇒ no async |
 | `DATABASE_URL` | SQLAlchemy audit DB | empty ⇒ no audit |
-| `SONAR_URL` / `SONAR_TOKEN` / `SONAR_COMPONENT` | SonarQube baseline (stage 8) | `http://localhost:9000` |
+| `SONAR_URL` / `SONAR_TOKEN` / `SONAR_COMPONENT` | SonarQube baseline (saved reports) | `http://localhost:9000` / — / `patchcourt` |
+| `SONAR_PROJECT_KEY` / `SONAR_HOST_URL` | SonarQube Live tab (health, gate, measures, issues) | `patchcourt` / `http://localhost:9000` |
+
+> LLM provider, model, API key, and base URL can also be changed **at runtime** from
+> the dashboard Settings tab (`/api/settings/llm`) without editing `.env` or restarting.
 
 ## Module layout
 
 ```
 patchcourt/
-├── agents/      # schemas, base agent, Security/Quality/Pragmatist specialists
-├── ingest/      # GitHub REST ingestion (httpx) — diff, files, raw contents
-├── rag/         # chunking + Qdrant store (real embeddings or deterministic hash)
-├── evidence.py  # tier assignment + tool↔LLM corroboration (Evidence engine)
-├── tools/       # adapter interface + semgrep/bandit/gitleaks/radon/synthetic
-├── sandbox/     # containerized tool execution (docker CLI via socket)
-├── baseline/    # SonarQube issue fetch + PR comparison + markdown/JSON report
-├── debate/      # conflict detection + bounded retrieval-gated debate
-├── judge/       # deterministic scoring + verdict + BLOCK-never-on-T5 rule
-├── db/          # SQLAlchemy models + audit persistence (PostgreSQL)
-├── worker/      # Celery app + review_pr task
-├── api/         # FastAPI: /api/review, /api/review/demo, /api/webhook/github, /api/baseline/latest, /api/baseline
-├── cli.py       # `python -m patchcourt review|baseline`
-├── llm.py       # provider dispatch (mock/openai/claude/gemini/ollama)
-└── config.py    # .env settings + tier weights
+├── agents/        # schemas, base agent, Security/Quality/Pragmatist specialists
+├── ingest/        # GitHub REST ingestion (httpx) — diff, files, raw contents
+├── rag/           # chunking + Qdrant store (real embeddings or deterministic hash)
+├── evidence.py    # tier assignment + tool↔LLM corroboration (Evidence engine)
+├── tools/         # adapter interface + semgrep/bandit/gitleaks/radon/synthetic
+├── sandbox/       # containerized tool execution (docker CLI via socket)
+├── adjudication/  # finding validation, policy rules, cross-tool correlation, context
+├── debate/        # conflict detection + bounded, deduped, code-context debate
+├── judge/         # deterministic scoring + verdict + BLOCK-never-on-T5 rule
+├── baseline/      # SonarQube issue fetch + PR comparison + markdown/JSON report
+├── comparison.py  # dynamic SonarQube-vs-PatchCourt comparison derived from a review
+├── sonar_live.py  # live SonarQube health / quality gate / measures / issues
+├── benchmark/     # labeled adjudication dataset + metrics + saved results
+├── db/            # SQLAlchemy models + audit persistence (PostgreSQL)
+├── worker/        # Celery app + review_pr task
+├── api/           # FastAPI app + webhook router (see REST API table)
+├── graph.py       # LangGraph pipeline wiring
+├── demo.py        # bundled insecure demo PR
+├── demo_comparison.py  # static hand-authored comparison workspace (legacy)
+├── runtime_llm_config.py  # runtime LLM overrides (Settings tab)
+├── cli.py         # `python -m patchcourt review|baseline|benchmark`
+├── llm.py         # provider dispatch (mock/openai/claude/gemini/ollama)
+└── config.py      # .env settings + tier weights
 ```
 
 ## Tests
 
 ```bash
-pytest -q
+pytest -q     # 132 tests
 ```
 
-Covered: tier weights, judge scoring math, the **BLOCK-on-T5-alone** rule,
-conflict gating, PR URL parsing, evidence-engine corroboration, Qdrant store,
-sandbox graceful-skip behavior, webhook routing, Celery task registration, LLM
-provider dispatch, SonarQube baseline comparison, and an offline end-to-end
-pipeline through the real LangGraph + RAG + judge stack with a fake LLM.
+Covered: tier weights, judge scoring math, the **BLOCK-on-T5-alone** rule, conflict
+gating, PR URL parsing, evidence-engine corroboration, **debate de-duplication &
+convergence**, **code-snippet extraction + plain-English verdict summaries**,
+finding validation / policy rules / correlation / contextual prioritisation
+(adjudication), the **adjudication benchmark** metrics, **dynamic SonarQube-vs-PatchCourt
+comparison**, Qdrant store, sandbox graceful-skip behavior, webhook routing, Celery
+task registration, LLM provider dispatch + runtime settings, SonarQube baseline
+comparison, and an offline end-to-end pipeline through the real LangGraph + RAG + judge
+stack with a fake LLM.
 
 ## Field demo runbook
 
@@ -351,7 +465,7 @@ The full ordered path, from a clean clone to a live container sandbox review:
 
 2. **Unit/offline checks**
    ```bash
-   pytest -q                                    # 51 tests
+   pytest -q                                    # 132 tests
    python -m patchcourt review --demo           # BLOCK 15.8, 1 debate (no keys)
    ```
 
