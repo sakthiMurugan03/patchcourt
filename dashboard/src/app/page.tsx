@@ -26,6 +26,7 @@ import {
 } from "recharts";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ViewHeader } from "@/components/view-header";
+import { ExportPdfButton } from "@/components/ExportPdfButton";
 
 type Phase = "idle" | "loading" | "done" | "error";
 
@@ -90,15 +91,18 @@ export default function Page() {
         <ViewHeader
           title="Overview"
           actions={
-            localPhase === "done" && localReport && (
-              <button
-                onClick={handleNewReview}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <RefreshCw className="size-3.5" />
-                New review
-              </button>
-            )
+            localPhase === "done" && localReport ? (
+              <div className="flex items-center gap-2">
+                <ExportPdfButton report={localReport} />
+                <button
+                  onClick={handleNewReview}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <RefreshCw className="size-3.5" />
+                  New review
+                </button>
+              </div>
+            ) : undefined
           }
         />
         <div className="flex flex-col gap-6">

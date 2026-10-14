@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { LayoutWrapper } from "@/components/layout-wrapper";
 import { ViewHeader } from "@/components/view-header";
+import { CodeDiffViewer } from "@/components/CodeDiffViewer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useReview } from "@/lib/review-context";
 import { submitReview, runComparisonDemo } from "@/lib/api";
@@ -316,6 +317,61 @@ function CodeSnippet({ snippet }: { snippet: string }) {
   );
 }
 
+const LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  py: "python",
+  ts: "typescript",
+  tsx: "typescript",
+  js: "javascript",
+  jsx: "javascript",
+  java: "java",
+  go: "go",
+  rb: "ruby",
+  rs: "rust",
+  cs: "csharp",
+  cpp: "cpp",
+  c: "c",
+  h: "c",
+  json: "json",
+  md: "markdown",
+  yml: "yaml",
+  yaml: "yaml",
+  sh: "shell",
+  sql: "sql",
+};
+
+/** Best-effort Monaco language id from a file path. */
+function detectLanguage(file?: string): string {
+  const ext = (file ?? "").split(".").pop()?.toLowerCase() ?? "";
+  return LANGUAGE_BY_EXTENSION[ext] ?? "plaintext";
+}
+
+/**
+ * Derive a side-by-side diff from a single highlighted context window.
+ *
+ * The backend marks the flagged line(s) with a leading arrow ("\u2192"); those
+ * lines form the "modified" side while the surrounding context is shared by
+ * both sides. Returns empty strings when no snippet is available so the viewer
+ * renders safely while backend data is still loading.
+ */
+function deriveCodeDiff(snippet?: string): { original: string; modified: string } {
+  if (!snippet) {
+    return { original: "", modified: "" };
+  }
+  const original: string[] = [];
+  const modified: string[] = [];
+  for (const line of snippet.split("\n")) {
+    const isTarget = line.startsWith("\u2192");
+    const clean = line.replace(/^\u2192\s?/, "");
+    if (isTarget) {
+      modified.push(clean);
+    } else {
+      original.push(clean);
+      modified.push(clean);
+    }
+  }
+  return { original: original.join("\n"), modified: modified.join("\n") };
+}
+
 export default function ComparisonPage() {
   const { report, phase, setReport, setPhase, setError } = useReview();
   const [inputUrl, setInputUrl] = useState("");
@@ -563,6 +619,7 @@ export default function ComparisonPage() {
               const sonar = row.sonar;
               const pcr = row.patchcourt;
               const group: string = row.group ?? "unmatched";
+              const diff = deriveCodeDiff(pcr?.code_snippet);
               return (
                 <div key={i} className={`border-l-4 rounded-r-lg p-4 bg-card ${GROUP_COLOR[group] ?? ""}`}>
                   {/* Finding header */}
@@ -585,9 +642,15 @@ export default function ComparisonPage() {
                     <p className="text-sm mt-0.5">{sonar.message}</p>
                   </div>
 
-                  {/* Code snippet — highlighted context window around the flagged line */}
-                  {(pcr)?.code_snippet ? (
-                    <CodeSnippet snippet={(pcr).code_snippet} />
+                  {/* Code snippet — side-by-side diff of the flagged context window */}
+                  {pcr?.code_snippet ? (
+                    <CodeDiffViewer
+                      className="mt-2 overflow-hidden rounded border border-zinc-800"
+                      original={diff.original}
+                      modified={diff.modified}
+                      language={detectLanguage(sonar.file)}
+                      height="260px"
+                    />
                   ) : null}
 
                   {/* PatchCourt adjudication details */}
