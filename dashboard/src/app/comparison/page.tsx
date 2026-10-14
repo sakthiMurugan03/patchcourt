@@ -74,6 +74,14 @@ function EvidencePill({ label, color }: { label: string; color: string }) {
   );
 }
 
+/** Assessment shape read by the capability table (superset of the report type). */
+type AssessmentRow = NonNullable<Report["finding_assessments"]>[number] & {
+  policies?: Array<{ id?: string; title?: string; source?: string; excerpt?: string }>;
+  evidence?: Array<{ tier?: number; text?: string }>;
+  introduced_by_pr?: boolean;
+  pre_existing?: boolean;
+};
+
 function CapabilityTable({ report, fc, legacy }: {
   report: Report;
   fc: FindingComparison;
@@ -82,15 +90,13 @@ function CapabilityTable({ report, fc, legacy }: {
   const [open, setOpen] = useState(false);
 
   // derive live evidence from report
-  const assessments = (report.finding_assessments ?? []) as any[];
+  const assessments: AssessmentRow[] = report.finding_assessments ?? [];
   const taintCount = assessments.filter((a) => a?.tool === "taint-inference").length;
   const hasTaint = taintCount > 0;
   const hasDebate = (report.debate_transcripts ?? []).length > 0;
   const hasCorroborated = assessments.some((a) => a?.corroborated);
   const hasFpFn = assessments.some((a) => a?.fp_fn_root_cause);
   const hasFaultCorr = assessments.some((a) => a?.fault_correlation);
-  const hasQa = assessments.some((a) => a?.qa_verdict);
-  const hasNewInPr = assessments.some((a) => a?.introduced_by_pr);
   const sonarRaw = legacy?.counts?.raw ?? fc.total_in_pr ?? 0;
   const sonarMissed = legacy?.counts?.sonar_missed ?? 0;
   const contradicted = fc.counts?.contradicted ?? 0;
@@ -194,7 +200,7 @@ function CapabilityTable({ report, fc, legacy }: {
         <div className="flex flex-wrap gap-1">
           {[1,2,3,4,5].map((t) => {
             const n = assessments.filter((a) =>
-              (a?.evidence ?? []).some((e: any) => e?.tier === t)
+              (a?.evidence ?? []).some((e) => e?.tier === t)
             ).length;
             return n > 0
               ? <EvidencePill key={t} label={`T${t}: ${n}`} color={t<=2 ? "text-red-400 border-red-400/40" : t===3 ? "text-yellow-400 border-yellow-400/40" : "text-zinc-400 border-zinc-600"} />
