@@ -12,6 +12,11 @@ jobs:
   backend-test:
     name: backend-test
     runs-on: ubuntu-latest
+    env:
+      # Dummy values so settings/tests load cleanly on headless runners where
+      # no Redis or Postgres service is available.
+      REDIS_HOST: localhost
+      POSTGRES_DB: test
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +31,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Ensure test dependencies
+        run: pip install pytest-cov pytest-asyncio httpx redis
+
       - name: Run tests with coverage
         run: pytest --cov=patchcourt
 
@@ -34,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: dashboard
+        working-directory: ./dashboard
     steps:
       - uses: actions/checkout@v4
 
@@ -43,7 +51,7 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: dashboard/package-lock.json
+          cache-dependency-path: ./dashboard/package-lock.json
 
       - name: Install packages
         run: npm ci
